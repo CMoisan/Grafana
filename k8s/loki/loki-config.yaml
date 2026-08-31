@@ -1,0 +1,110 @@
+# =============================================================================
+# LOKI - base de logs
+# =============================================================================
+# L'IDEE FONDATRICE, a savoir expliquer en 30 secondes :
+#   Elasticsearch indexe TOUT le contenu des logs -> index enorme, cher, lent
+#   a ecrire. Loki n'indexe QUE des LABELS (app, namespace, pod, level) et
+#   stocke le corps du log compresse, sans index. La recherche plein texte se
+#   fait par force brute, mais uniquement sur les chunks selectionnes par les
+#   labels. Resultat : ingestion 10x moins chere, recherche tres rapide SI vous
+#   filtrez d'abord par labels.
+#
+# COROLLAIRE : la qualite de vos labels EST la performance de Loki.
+#   {namespace="apps", app="orders-api"} |= "error"     -> rapide
+#   {job=~".+"} |= "error"                              -> scan de tout, lent
+#
+# ANTI-PATTERN N°1 (a repeter aux clients) : mettre une valeur a forte
+# cardinalite en label (traceId, userId, requestId). Chaque combinaison de
+# labels cree un STREAM avec ses propres chunks. 1 million de traceId =
+# 1 million de streams = Loki a genoux. Ces valeurs vont dans le CORPS du log
+# (filtrees avec `| json | traceId="..."`) ou en "structured metadata".
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: observability
+data:
+  loki.yaml: |
+    # Pas de multi-tenant dans le lab : le tenant devient "fake".
+    auth_enabled: false
+
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9096
+      log_level: info
+
+    common:
+      instance_addr: 127.0.0.1
+      path_prefix: /loki
+      storage:
+        filesystem:
+          chunks_directory: /loki/chunks
+          rules_directory: /loki/rules
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+
+    schema_config:
+      configs:
+        # `tsdb` + schema `v13` = le format actuel de Loki 3.x. Les anciens
+        # (boltdb-shipper, v11/v12) existent encore chez beaucoup de clients :
+        # une migration se fait en AJOUTANT une entree avec une date `from`
+        # future, jamais en modifiant l'existante. Question de migration
+        # frequente en avant-vente.
+        - from: 2024-01-01
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+
+    limits_config:
+      retention_period: 168h            # 7 jours
+      # Autorise les "structured metadata" : des cles/valeurs attachees a une
+      # ligne de log SANS creer de nouveau stream. C'est la reponse de Loki 3
+      # au probleme de cardinalite -> c'est la qu'on met un traceId.
+      allow_structured_metadata: true
+      volume_enabled: true              # active l'onglet "Volume" dans Explore
+      max_query_series: 5000
+      # Nombre max de streams par tenant : le garde-fou anti-cardinalite.
+      max_global_streams_per_user: 5000
+      ingestion_rate_mb: 20
+      ingestion_burst_size_mb: 40
+      # Rejette les logs dont l'horodatage est trop ancien. Cause n°1 des
+      # erreurs "entry too far behind" quand un agent rattrape du retard.
+      reject_old_samples: true
+      reject_old_samples_max_age: 24h
+
+    compactor:
+      working_directory: /loki/compactor
+      # La retention n'est PAS automatique : sans `retention_enabled: true`,
+      # `retention_period` est ignore et le disque se remplit indefiniment.
+      # Piege classique en support.
+      retention_enabled: true
+      delete_request_store: filesystem
+
+    # Le pattern ingester detecte automatiquement la STRUCTURE recurrente des
+    # logs. C'est ce qui alimente la vue "Patterns" de Grafana Explore Logs :
+    # au lieu de lire 100 000 lignes, vous voyez 12 motifs et leur volume.
+    # Effet demo garanti.
+    pattern_ingester:
+      enabled: true
+
+    ruler:
+      # Oui, Loki a aussi un ruler : on peut alerter SUR DES LOGS.
+      # Cas d'usage typique : "plus de 10 stack traces par minute".
+      storage:
+        type: local
+        local:
+          directory: /loki/rules
+      rule_path: /loki/rules-tmp
+      enable_api: true
+
+    frontend:
+      encoding: protobuf
+
+    analytics:
+      reporting_enabled: false

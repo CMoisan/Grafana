@@ -1,0 +1,97 @@
+# =============================================================================
+# DEPLOIEMENT ALLOY (DaemonSet)
+# =============================================================================
+# POURQUOI UN DAEMONSET ET PAS UN DEPLOYMENT ?
+# Un DaemonSet garantit UN pod par noeud. Chaque agent ne collecte que les logs
+# et metriques de SON noeud :
+#   - le trafic reste local au noeud (pas de traversee reseau inter-noeuds) ;
+#   - la charge se repartit naturellement quand le cluster grandit ;
+#   - si un noeud meurt, on ne perd que son agent.
+#
+# NUANCE IMPORTANTE (et question piege) : ici la decouverte n'est PAS filtree
+# par noeud, donc les 2 agents scraperaient les memes cibles s'il y avait 2
+# noeuds -> DOUBLONS. En production on ajoute une regle de relabeling :
+#     rule { source_labels = ["__meta_kubernetes_pod_node_name"]
+#            regex = sys.env("HOSTNAME_NODE")  action = "keep" }
+# Minikube n'ayant qu'un noeud, le lab reste correct. Savoir CITER ce piege
+# est exactement le genre de detail qui distingue un bon SE.
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: alloy
+  namespace: observability
+  labels: { app: alloy }
+spec:
+  ports:
+    - { name: http,      port: 12345, targetPort: 12345 }  # UI de debug
+    - { name: otlp-grpc, port: 4317,  targetPort: 4317 }
+    - { name: otlp-http, port: 4318,  targetPort: 4318 }
+  selector: { app: alloy }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: alloy
+  namespace: observability
+spec:
+  selector:
+    matchLabels: { app: alloy }
+  template:
+    metadata:
+      labels:
+        app: alloy
+      annotations:
+        # Force le redemarrage des pods quand la config change. Sans ca, un
+        # `kubectl apply` sur la ConfigMap ne redemarre RIEN et vous croyez
+        # que votre modification est active alors qu'elle ne l'est pas.
+        # (Ici on met une valeur manuelle ; les scripts font un rollout restart.)
+        config.version: "1"
+    spec:
+      serviceAccountName: alloy
+      containers:
+        - name: alloy
+          image: grafana/alloy:v1.14.0
+          args:
+            - run
+            - /etc/alloy/config.alloy
+            # Expose l'UI de debug sur toutes les interfaces (lab uniquement).
+            - --server.http.listen-addr=0.0.0.0:12345
+            # `stability.level=experimental` autorise les composants recents
+            # (certains stages de loki.process). A eviter en production.
+            - --stability.level=experimental
+            # Recharge la config sans redemarrer le process quand le fichier
+            # change (la ConfigMap montee est mise a jour par le kubelet).
+            - --cluster.enabled=false
+          ports:
+            - { name: http,      containerPort: 12345 }
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+          env:
+            # Le nom du noeud, disponible pour du relabeling par noeud.
+            - name: HOSTNAME_NODE
+              valueFrom:
+                fieldRef: { fieldPath: spec.nodeName }
+            # Alloy stocke son WAL ici. Doit etre inscriptible.
+            - name: ALLOY_DEPLOY_MODE
+              value: "kubernetes"
+          readinessProbe:
+            httpGet: { path: /-/ready, port: 12345 }
+            initialDelaySeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: "1",  memory: 1Gi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/alloy }
+            - { name: data,   mountPath: /var/lib/alloy }
+      volumes:
+        - name: config
+          configMap: { name: alloy-config }
+        - name: data
+          # emptyDir : le WAL est perdu si le pod bouge. Acceptable pour un lab.
+          # En production : hostPath ou volume persistant, sinon une coupure de
+          # Mimir + un redemarrage d'Alloy = trou definitif dans les donnees.
+          emptyDir: {}
+      tolerations:
+        # Permet de collecter aussi sur les noeuds control-plane.
+        - operator: Exists

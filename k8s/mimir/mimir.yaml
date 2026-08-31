@@ -1,0 +1,108 @@
+# =============================================================================
+# DEPLOIEMENT MIMIR (StatefulSet, mode monolithique)
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: mimir
+  namespace: observability
+  labels: { app: mimir }
+spec:
+  # ClusterIP classique : c'est l'adresse que Grafana et Alloy utilisent.
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: grpc
+      port: 9095
+      targetPort: grpc
+  selector: { app: mimir }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mimir-headless
+  namespace: observability
+  labels: { app: mimir }
+spec:
+  # clusterIP: None = service HEADLESS. Le DNS renvoie l'IP de CHAQUE pod au
+  # lieu d'une IP virtuelle. C'est indispensable a memberlist (le protocole de
+  # gossip qui forme le "ring" Mimir) : les pods doivent se decouvrir un a un.
+  # Meme mecanisme dans Loki, Tempo, Cassandra, Kafka... A connaitre.
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: memberlist
+      port: 7946
+      targetPort: 7946
+  selector: { app: mimir }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mimir
+  namespace: observability
+spec:
+  serviceName: mimir-headless
+  replicas: 1
+  selector:
+    matchLabels: { app: mimir }
+  template:
+    metadata:
+      labels:
+        app: mimir
+      annotations:
+        # Ces annotations sont lues par NOTRE config Alloy (voir alloy-config).
+        # Mimir s'auto-surveille : on scrape les metriques de Mimir avec Mimir.
+        # En demo, montrer "je supervise ma plateforme d'observabilite avec
+        # elle-meme" fait toujours son effet (mais rappelez que le monitoring
+        # du monitoring doit idealement vivre ailleurs -> "meta-monitoring").
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        fsGroup: 10001
+        runAsUser: 10001
+        runAsNonRoot: true
+      containers:
+        - name: mimir
+          image: grafana/mimir:2.17.1   # dernier 2.x. Mimir 3.x existe : la migration
+                                #   est un exercice de config a part entiere,
+                                #   la config ci-dessus suit le format 2.x.
+          args:
+            - -config.file=/etc/mimir/mimir.yaml
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: grpc, containerPort: 9095 }
+            - { name: memberlist, containerPort: 7946 }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            # requests = ce que le scheduler RESERVE (garanti).
+            # limits   = plafond ; si depasse en memoire -> OOMKill immediat.
+            # Regle : pour un composant stateful sensible, requests == limits
+            # (classe QoS "Guaranteed") -> jamais evince en premier.
+            requests: { cpu: 200m, memory: 768Mi }
+            limits:   { cpu: "2",  memory: 2Gi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/mimir }
+            - { name: data,   mountPath: /data }
+            # Les regles sont montees dans le dossier du tenant "anonymous".
+            - { name: rules,  mountPath: /data/rules/anonymous }
+      volumes:
+        - name: config
+          configMap: { name: mimir-config }
+        - name: rules
+          configMap: { name: mimir-rules }
+  volumeClaimTemplates:
+    # Un StatefulSet cree un PVC PAR POD, avec une identite stable
+    # (data-mimir-0). C'est ca qui distingue un StatefulSet d'un Deployment :
+    # l'ingester retrouve SON WAL apres un redemarrage, donc pas de perte.
+    - metadata: { name: data }
+      spec:
+        accessModes: [ ReadWriteOnce ]
+        resources:
+          requests: { storage: 5Gi }

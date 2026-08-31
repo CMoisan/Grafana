@@ -1,0 +1,139 @@
+# =============================================================================
+# MIMIR - base de donnees de metriques compatible Prometheus
+# =============================================================================
+# CE QU'IL FAUT SAVOIR DIRE SUR MIMIR :
+#  - c'est un Prometheus "scale-out" : meme langage (PromQL), meme protocole
+#    d'ingestion (remote write), mais stockage objet (S3/GCS) et multi-tenant ;
+#  - il resout les 3 limites de Prometheus vanilla : retention longue,
+#    haute dispo sans doublons, et isolation par equipe (tenants) ;
+#  - il est compose de microservices (distributor, ingester, querier,
+#    store-gateway, compactor, ruler...). En "monolithic mode" (target=all)
+#    ils tournent tous dans UN process : parfait pour un lab.
+#
+# ARCHITECTURE A CONNAITRE PAR COEUR (chemin d'une metrique) :
+#   Alloy --remote_write--> distributor --> ingester (WAL + memoire, ~2h)
+#                                              |
+#                                              v  toutes les 2h
+#                                          blocs TSDB --> stockage objet
+#                                              ^
+#   PromQL --> query-frontend --> querier -----+--> store-gateway (blocs anciens)
+#
+# Le querier interroge TOUJOURS deux sources : les ingesters (donnees recentes,
+# encore en memoire) ET les store-gateways (blocs deja pousses). Savoir tracer
+# ce schema au tableau est une question d'entretien quasi certaine.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mimir-config
+  namespace: observability
+data:
+  mimir.yaml: |
+    # `all` = mode monolithique : tous les composants dans un seul binaire.
+    # En production on deploie chaque cible separement pour scaler
+    # independamment (ex : beaucoup de queriers, peu de compactors).
+    target: all
+
+    # Mimir est multi-tenant NATIVEMENT. Chaque requete doit porter l'en-tete
+    # `X-Scope-OrgID`. On le desactive ici pour simplifier : le tenant devient
+    # implicitement "anonymous".
+    # EN DEMO CLIENT : c'est LE grand argument face a Prometheus. Une seule
+    # plateforme, N equipes, chacune isolee avec ses propres limites.
+    multitenancy_enabled: false
+
+    server:
+      http_listen_port: 8080
+      grpc_listen_port: 9095
+      log_level: info
+      # Les gros dashboards envoient des requetes longues : on augmente la limite.
+      grpc_server_max_recv_msg_size: 104857600
+      grpc_server_max_send_msg_size: 104857600
+
+    common:
+      storage:
+        # `filesystem` pour le lab. En production : s3, gcs ou azure.
+        # Le passage de filesystem a S3 ne change QUE ce bloc : c'est le
+        # decouplage calcul/stockage, l'argument central de l'archi Mimir.
+        backend: filesystem
+        filesystem:
+          dir: /data/common
+
+    blocks_storage:
+      backend: filesystem
+      filesystem:
+        dir: /data/blocks
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+      tsdb:
+        dir: /data/tsdb
+        # Toutes les 2h, l'ingester ferme un bloc et le pousse au stockage objet.
+        # C'est pour ca qu'apres un redemarrage on peut perdre jusqu'a 2h de
+        # donnees si le WAL n'est pas persiste -> d'ou le PVC plus bas.
+        block_ranges_period: [2h]
+        retention_period: 24h
+
+    ingester:
+      ring:
+        # 1 seul replica dans le lab. En production : 3, avec un quorum d'ecriture.
+        # C'est ce qui permet de perdre un ingester sans perdre de donnees.
+        replication_factor: 1
+        kvstore:
+          store: memberlist
+
+    store_gateway:
+      sharding_ring:
+        replication_factor: 1
+        kvstore:
+          store: memberlist
+
+    compactor:
+      data_dir: /data/compactor
+      # Le compactor fusionne et deduplique les blocs. Sans lui, les requetes
+      # longues durees deviennent tres lentes et le stockage explose.
+      compaction_interval: 30m
+
+    ruler:
+      rule_path: /data/ruler-tmp
+      # Le RULER evalue les regles d'enregistrement et d'alerte COTE SERVEUR,
+      # exactement comme Prometheus. Avantage : les regles survivent au
+      # redemarrage de Grafana et fonctionnent meme si Grafana est down.
+      alertmanager_url: http://localhost:8080/alertmanager
+      enable_api: true
+
+    ruler_storage:
+      backend: filesystem
+      filesystem:
+        # Structure imposee : <dir>/<tenant>/<namespace de regles>
+        # Avec multitenancy desactive, le tenant est "anonymous".
+        dir: /data/rules
+
+    alertmanager:
+      data_dir: /data/alertmanager-data
+      external_url: http://localhost:8080/alertmanager
+      enable_api: true
+
+    alertmanager_storage:
+      backend: filesystem
+      filesystem:
+        dir: /data/alertmanager
+
+    memberlist:
+      join_members:
+        - mimir-headless.observability.svc.cluster.local:7946
+
+    # -------------------------------------------------------------------------
+    # LIMITES : le sujet n°1 du support Grafana Cloud
+    # -------------------------------------------------------------------------
+    # Ces limites protegent la plateforme contre UNE equipe qui envoie n'importe
+    # quoi. Quand un client dit "Mimir rejette mes metriques", la reponse est
+    # presque toujours ici. Les erreurs 429 remontent jusqu'a Alloy et
+    # apparaissent dans ses propres metriques.
+    limits:
+      ingestion_rate: 100000              # echantillons/s par tenant
+      ingestion_burst_size: 200000
+      max_global_series_per_user: 300000  # LE garde-fou anti-cardinalite
+      max_label_names_per_series: 40
+      # Autorise les echantillons legerement dans le desordre : indispensable
+      # avec plusieurs agents dont les horloges derivent un peu.
+      out_of_order_time_window: 5m
+      compactor_blocks_retention_period: 24h

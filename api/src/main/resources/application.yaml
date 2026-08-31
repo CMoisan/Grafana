@@ -1,0 +1,102 @@
+# =============================================================================
+# CONFIGURATION SPRING BOOT - ORDERS API
+# Tout ce qui touche a l'observabilite est commente : c'est le coeur du lab.
+# =============================================================================
+
+spring:
+  application:
+    # Ce nom devient le common tag `application` sur TOUTES les metriques,
+    # et le label `service_name` cote traces. Choisissez-le bien : le renommer
+    # plus tard casse tous les dashboards et toutes les alertes.
+    name: orders-api
+
+server:
+  port: 8080
+  shutdown: graceful          # attend la fin des requetes en cours avant de mourir
+  tomcat:
+    threads:
+      max: 200                # limite du pool : c'est CE chiffre que k6 va saturer
+
+# Delai max accorde a l'arret propre. Doit rester < terminationGracePeriodSeconds
+# du pod k8s (30 s par defaut), sinon k8s SIGKILL au milieu d'une requete.
+spring.lifecycle.timeout-per-shutdown-phase: 20s
+
+app:
+  environment: dev            # -> common tag `environment`
+  version: 1.0.0              # -> common tag `version`
+
+# =============================================================================
+# ACTUATOR : les endpoints d'exploitation
+# =============================================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        # On expose le strict necessaire. En prod on met ces endpoints sur un
+        # PORT SEPARE (management.server.port) non expose a Internet.
+        include: health,info,prometheus,metrics,loggers
+  endpoint:
+    health:
+      # Affiche le detail des composants -> tres utile en demo pour montrer
+      # d'ou vient un "DOWN".
+      show-details: always
+      probes:
+        # Active /actuator/health/liveness et /readiness.
+        # RAPPEL K8S FONDAMENTAL :
+        #   liveness  = "suis-je vivant ?"  -> si NON, k8s REDEMARRE le pod
+        #   readiness = "puis-je servir ?"  -> si NON, k8s me retire du Service
+        # Brancher une dependance externe sur la LIVENESS est une erreur
+        # classique : la base tombe -> tous les pods redemarrent en boucle ->
+        # panne totale. Les dependances vont sur la READINESS.
+        enabled: true
+
+  # -------------------------------------------------------------------------
+  # METRIQUES
+  # -------------------------------------------------------------------------
+  metrics:
+    tags:
+      # Redondant avec ObservabilityConfig, laisse ici pour montrer les 2 facons.
+      application: orders-api
+    distribution:
+      percentiles-histogram:
+        # Publie les buckets pour les timers HTTP (necessaire a histogram_quantile).
+        http.server.requests: true
+
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+        # `step` doit correspondre a l'intervalle de scrape d'Alloy (15 s).
+        # Si Alloy scrape plus vite que le step, vous verrez des paliers.
+        step: 15s
+
+  # -------------------------------------------------------------------------
+  # TRACING
+  # -------------------------------------------------------------------------
+  tracing:
+    sampling:
+      # 1.0 = on trace 100% des requetes. Parfait pour un lab.
+      # En production on descend a 0.01-0.1, ou on utilise du "tail sampling"
+      # (garder 100% des traces en erreur, 1% des traces normales) via Alloy.
+      # Savoir expliquer ce compromis cout/visibilite est attendu d'un SE.
+      probability: 1.0
+
+  # -------------------------------------------------------------------------
+  # HEALTH DETAILLE
+  # -------------------------------------------------------------------------
+  health:
+    diskspace:
+      enabled: true
+
+# =============================================================================
+# LOGS
+# =============================================================================
+logging:
+  level:
+    root: INFO
+    com.grafanalab.orders: INFO
+    # Passez ceci en DEBUG a chaud via :
+    #   curl -XPOST localhost:8080/actuator/loggers/com.grafanalab.orders \
+    #        -H 'Content-Type: application/json' -d '{"configuredLevel":"DEBUG"}'
+    # Excellente demo : on augmente la verbosite d'un service EN PRODUCTION,
+    # sans redeployer, et on voit le volume grimper en direct dans Loki.

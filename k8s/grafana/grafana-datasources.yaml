@@ -1,0 +1,94 @@
+# =============================================================================
+# PROVISIONING DES DATASOURCES GRAFANA
+# =============================================================================
+# LE PROVISIONING, C'EST QUOI ET POURQUOI C'EST CENTRAL ?
+# Grafana peut etre configure par des fichiers YAML poses dans
+# /etc/grafana/provisioning/. Datasources, dashboards, alertes, equipes,
+# permissions : tout est descriptible en fichiers.
+#
+# Enjeu : "Grafana as Code". Un client qui clique dans l'UI perd tout a la
+# reinstallation, ne peut pas faire de revue de code, ni de promotion
+# dev -> staging -> prod. C'est LE conseil structurant a donner en avant-vente.
+# (Le pendant Terraform : le provider `grafana` ; le pendant k8s : l'operateur
+# Grafana avec ses CRD GrafanaDatasource / GrafanaDashboard.)
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: observability
+data:
+  datasources.yaml: |
+    apiVersion: 1
+
+    datasources:
+      # -----------------------------------------------------------------------
+      # MIMIR : declare comme une datasource de TYPE `prometheus`.
+      # C'est le point cle a comprendre : Mimir parle PromQL et l'API HTTP de
+      # Prometheus. Grafana ne fait pas la difference. Un client peut donc
+      # migrer de Prometheus a Mimir sans toucher a un seul dashboard.
+      # -----------------------------------------------------------------------
+      - name: Mimir
+        type: prometheus
+        uid: mimir                # UID FIXE : les dashboards y font reference.
+                                  # Sans uid fixe, Grafana en genere un aleatoire
+                                  # et vos dashboards provisionnes cassent.
+        access: proxy             # proxy = le BACKEND Grafana appelle Mimir.
+                                  # `direct` (navigateur -> datasource) est
+                                  # deprecie : CORS, secrets exposes, pas d'audit.
+        # Attention au suffixe /prometheus : Mimir expose l'API Prometheus sous
+        # ce prefixe. Oublier ce chemin = "datasource is not working", c'est
+        # l'erreur de configuration la plus frequente avec Mimir.
+        url: http://mimir.observability.svc.cluster.local:8080/prometheus
+        isDefault: true
+        jsonData:
+          httpMethod: POST        # POST autorise des requetes longues (les
+                                  # dashboards complexes depassent la limite
+                                  # d'URL en GET).
+          prometheusType: Mimir   # Active les optimisations specifiques Mimir.
+          prometheusVersion: 2.9.1
+          timeInterval: "15s"     # Doit correspondre au scrape_interval d'Alloy.
+                                  # Grafana s'en sert pour la variable $__rate_interval,
+                                  # qui evite les graphes en dents de scie.
+          # ---------------------------------------------------------------
+          # EXEMPLARS : le pont metriques -> traces.
+          # Un exemplar est un traceId attache a un point d'histogramme.
+          # Concretement : vous voyez un pic de p99, vous cliquez sur le point,
+          # et vous ouvrez LA trace de la requete lente. C'est la demo la plus
+          # spectaculaire de Grafana. Necessite Tempo pour etre complete.
+          # ---------------------------------------------------------------
+          exemplarTraceIdDestinations:
+            - name: traceID
+              datasourceUid: tempo
+        editable: false           # false = personne ne peut modifier via l'UI.
+                                  # La config reste la source de verite.
+
+      # -----------------------------------------------------------------------
+      # LOKI
+      # -----------------------------------------------------------------------
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki.observability.svc.cluster.local:3100
+        jsonData:
+          maxLines: 1000
+          # -------------------------------------------------------------------
+          # DERIVED FIELDS : LA fonctionnalite a maitriser absolument.
+          # Grafana applique une regex sur chaque ligne de log ; si elle matche,
+          # il affiche un BOUTON qui ouvre la trace correspondante.
+          # C'est la correlation logs -> traces, en un clic, sans quitter la page.
+          # En demo : "je vois l'erreur dans le log, je clique, je vois les
+          # 14 appels de service qui ont mene a cette erreur". Effet garanti.
+          # -------------------------------------------------------------------
+          derivedFields:
+            - name: TraceID
+              # Nos logs JSON contiennent "traceId":"abc123..."
+              matcherRegex: '"traceId":"(\w+)"'
+              url: '$${__value.raw}'
+              datasourceUid: tempo
+              urlDisplayLabel: 'Voir la trace'
+        editable: false
+    # NOTE : la datasource `tempo` n'existe pas encore dans ce lab. Les liens
+    # ci-dessus resteront inactifs tant que vous n'aurez pas deploye Tempo.
+    # C'est volontaire : la configuration est deja prete pour l'etape suivante.

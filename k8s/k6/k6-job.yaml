@@ -1,0 +1,99 @@
+# =============================================================================
+# EXECUTER k6 DANS LE CLUSTER, AVEC EXPORT DES METRIQUES VERS MIMIR
+# =============================================================================
+# POURQUOI LANCER k6 DANS LE CLUSTER PLUTOT QUE DEPUIS VOTRE POSTE ?
+#  - vous ne mesurez plus la latence de votre Wi-Fi et du NAT minikube ;
+#  - vous pouvez generer beaucoup plus de charge ;
+#  - c'est ce que fait un vrai pipeline CI.
+#
+# ET SURTOUT : `--out experimental-prometheus-rw` pousse les metriques k6
+# directement dans Mimir. Vous obtenez alors, DANS LE MEME GRAPHE :
+#   - la vue CLIENT (k6_http_req_duration : ce que l'utilisateur subit)
+#   - la vue SERVEUR (http_server_requests_seconds : ce que l'appli mesure)
+# L'ECART ENTRE LES DEUX EST LA DONNEE LA PLUS PRECIEUSE DU TEST : c'est le
+# temps passe dans le reseau, l'ingress, la file d'attente TCP et le pool de
+# threads, avant meme que votre code ne commence a s'executer.
+# Beaucoup d'equipes ne regardent que la vue serveur et concluent "tout va
+# bien" pendant que les utilisateurs attendent 2 secondes. Savoir montrer
+# cet ecart est un excellent moment de demo.
+#
+# Lancement :
+#   kubectl apply -f k8s/k6/k6-job.yaml
+#   kubectl -n apps logs -f job/k6-load
+# Relance : supprimez d'abord le Job (`kubectl -n apps delete job k6-load`),
+# un Job termine n'est pas re-executable.
+# =============================================================================
+# ---------------------------------------------------------------------------
+# LES SCRIPTS ARRIVENT PAR DEUX ConfigMaps, CREEES PAR scripts/03-deploy.ps1 :
+#   kubectl -n apps create configmap k6-scripts --from-file=k6/01-smoke.js ...
+#   kubectl -n apps create configmap k6-lib     --from-file=k6/lib
+#
+# Pourquoi DEUX ? Une ConfigMap est PLATE : elle n'a pas de sous-dossiers. Or
+# les scripts font `import ... from './lib/config.js'`. On monte donc `k6-lib`
+# par-dessus, sur /scripts/lib, pour reconstituer l'arborescence attendue.
+# C'est un piege classique quand on porte des scripts existants sur Kubernetes.
+#
+# Elles ne sont volontairement PAS definies ici : un `apply` de ce fichier
+# ecraserait leur contenu avec un objet vide.
+# ---------------------------------------------------------------------------
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-load
+  namespace: apps
+spec:
+  # Un test de charge qui echoue ne doit PAS etre rejoue automatiquement :
+  # on veut analyser l'echec, pas le masquer.
+  backoffLimit: 0
+  # Nettoyage automatique 1h apres la fin (evite d'accumuler des Jobs morts).
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: grafana/k6:2.2.0   # aligne sur le k6 installe en local :
+                                #   meme comportement en local et dans le cluster.
+          command:
+            - k6
+            - run
+            - --out
+            # Sortie remote write : k6 pousse ses propres metriques vers Mimir,
+            # exactement comme le fait Alloy pour l'application.
+            - experimental-prometheus-rw
+            - /scripts/02-load.js
+          env:
+            # URL d'ingestion Mimir (le meme endpoint que remote_write d'Alloy).
+            - name: K6_PROMETHEUS_RW_SERVER_URL
+              value: http://mimir.observability.svc.cluster.local:8080/api/v1/push
+            # Publie les quantiles (p95/p99) en plus des compteurs bruts.
+            # Sans ce reglage, vous n'aurez que des moyennes cote Mimir.
+            - name: K6_PROMETHEUS_RW_TREND_STATS
+              value: "p(50),p(95),p(99),max,count"
+            # Envoie aussi les series des metriques de tendance sous forme
+            # d'histogramme natif quand c'est possible.
+            - name: K6_PROMETHEUS_RW_PUSH_INTERVAL
+              value: "5s"
+            # L'API est jointe par son nom de service Kubernetes : le trafic
+            # ne sort jamais du cluster.
+            - name: BASE_URL
+              value: http://orders-api.apps.svc.cluster.local:8080
+            - name: TEST_RUN
+              value: "run-in-cluster"
+          resources:
+            # Un injecteur de charge a besoin de CPU. Sous-dimensionne, c'est
+            # LUI le goulot d'etranglement et vous mesurez votre injecteur au
+            # lieu de mesurer l'application. Verifiez toujours que le pod k6
+            # n'est pas a 100% de CPU avant de conclure quoi que ce soit.
+            requests: { cpu: 500m, memory: 512Mi }
+            limits:   { cpu: "2",  memory: 1Gi }
+          volumeMounts:
+            - { name: scripts, mountPath: /scripts }
+            # Monte par-dessus : reconstitue l'arborescence attendue par les
+            # imports ES6 (`import ... from './lib/config.js'`).
+            - { name: lib, mountPath: /scripts/lib }
+      volumes:
+        - name: scripts
+          configMap: { name: k6-scripts }
+        - name: lib
+          configMap: { name: k6-lib }

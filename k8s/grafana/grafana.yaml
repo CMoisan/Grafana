@@ -1,0 +1,103 @@
+# =============================================================================
+# DEPLOIEMENT GRAFANA
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: observability
+  labels: { app: grafana }
+spec:
+  # NodePort pour un acces direct depuis Windows via `minikube service`.
+  # En production : ClusterIP + Ingress + TLS + SSO (OAuth/SAML/LDAP).
+  type: NodePort
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      nodePort: 30300
+  selector: { app: grafana }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: grafana }
+  template:
+    metadata:
+      labels:
+        app: grafana
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        fsGroup: 472        # UID/GID officiel de l'utilisateur grafana
+        runAsUser: 472
+        runAsNonRoot: true
+      containers:
+        - name: grafana
+          image: grafana/grafana:13.2.0
+          ports:
+            - { name: http, containerPort: 3000 }
+          env:
+            # LAB UNIQUEMENT. En production : secret k8s + SSO, et surtout
+            # jamais de mot de passe en clair dans un manifeste versionne.
+            - { name: GF_SECURITY_ADMIN_USER,     value: "admin" }
+            - { name: GF_SECURITY_ADMIN_PASSWORD, value: "admin" }
+            # Desactive l'assistant de premiere connexion et l'anonymat.
+            - { name: GF_AUTH_ANONYMOUS_ENABLED,  value: "false" }
+            - { name: GF_USERS_ALLOW_SIGN_UP,     value: "false" }
+            # -----------------------------------------------------------------
+            # FEATURE TOGGLES : les fonctionnalites recentes se debloquent ici.
+            #  - traceToMetrics / traceToProfiles : navigation croisee.
+            #  - exploreMetrics / lokiExploreLogs : les nouvelles experiences
+            #    "sans requete", ou l'utilisateur navigue par clics au lieu
+            #    d'ecrire du PromQL/LogQL. C'est LE gros pari produit actuel de
+            #    Grafana pour elargir l'audience au-dela des experts.
+            #    A montrer absolument en demo a un client non technique.
+            # -----------------------------------------------------------------
+            - name: GF_FEATURE_TOGGLES_ENABLE
+              value: "traceToMetrics,exploreMetrics,lokiExploreLogs,lokiLogsDataplane"
+            # Chemin de provisioning (valeur par defaut, explicite pour la doc).
+            - { name: GF_PATHS_PROVISIONING, value: "/etc/grafana/provisioning" }
+            # Log en JSON : coherent avec le reste, et parsable par Loki.
+            - { name: GF_LOG_MODE, value: "console" }
+            - { name: GF_LOG_LEVEL, value: "info" }
+            # Desactive la telemetrie sortante (utile en environnement ferme).
+            - { name: GF_ANALYTICS_REPORTING_ENABLED, value: "false" }
+            - { name: GF_ANALYTICS_CHECK_FOR_UPDATES, value: "false" }
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: "1",  memory: 768Mi }
+          volumeMounts:
+            - { name: datasources, mountPath: /etc/grafana/provisioning/datasources }
+            - { name: dashboards-provider, mountPath: /etc/grafana/provisioning/dashboards }
+            - { name: dashboards, mountPath: /etc/grafana/dashboards }
+            - { name: storage, mountPath: /var/lib/grafana }
+      volumes:
+        - name: datasources
+          configMap: { name: grafana-datasources }
+        - name: dashboards-provider
+          configMap: { name: grafana-dashboards-provider }
+        - name: dashboards
+          configMap: { name: grafana-dashboards }
+        - name: storage
+          # emptyDir : la base SQLite interne (utilisateurs, favoris, historique
+          # d'alertes) est perdue au redemarrage. Les datasources et dashboards
+          # PROVISIONNES, eux, reviennent tout seuls : c'est justement l'interet
+          # du provisioning. En production, un PVC ou Postgres externe.
+          emptyDir: {}

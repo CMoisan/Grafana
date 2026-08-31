@@ -1,0 +1,451 @@
+# =============================================================================
+# GRAFANA ALLOY - le collecteur unique (metriques + logs + traces + profils)
+# =============================================================================
+# CE QU'IL FAUT SAVOIR DIRE SUR ALLOY :
+#  - Alloy est la distribution Grafana d'OpenTelemetry Collector, enrichie de
+#    tous les composants Prometheus et Loki. Il REMPLACE a lui seul :
+#    Prometheus (mode agent), Promtail, l'OTel Collector et Grafana Agent.
+#  - Sa config n'est pas du YAML mais un langage a COMPOSANTS : on declare des
+#    briques et on les CABLE entre elles par des references. C'est un graphe
+#    (DAG) de flux de donnees, pas une liste d'options.
+#  - Chaque composant a des `arguments` (entrees) et des `exports` (sorties).
+#    `discovery.relabel.app_pods.output` = la sortie du composant.
+#  - L'UI de debug est sur le port 12345 : elle affiche le graphe EN DIRECT,
+#    avec le nombre de cibles et les erreurs de chaque composant.
+#    C'est l'outil n°1 de troubleshooting, montrez-le systematiquement en demo.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-config
+  namespace: observability
+data:
+  config.alloy: |
+    // =========================================================================
+    // PARTIE 1 - METRIQUES : decouverte des pods a scraper
+    // =========================================================================
+
+    // Interroge l'API k8s et produit UNE cible par port de conteneur expose.
+    // Les metadonnees arrivent en labels temporaires prefixes __meta_kubernetes_*
+    // (souligne = supprime avant l'envoi, sauf si on les recopie explicitement).
+    discovery.kubernetes "pods" {
+      role = "pod"
+    }
+
+    // Le RELABELING est le concept le plus important de tout Prometheus.
+    // C'est un pipeline de regles applique a chaque cible :
+    //   - `keep` / `drop`  : filtrer les cibles
+    //   - `replace`        : creer ou reecrire un label
+    //   - `labelmap`       : renommer en masse
+    // On s'en sert ici pour ne scraper QUE les pods annotes, et pour attacher
+    // namespace/pod/app a chaque metrique.
+    discovery.relabel "annotated_pods" {
+      targets = discovery.kubernetes.pods.targets
+
+      // Regle 1 : ne garder que les pods portant prometheus.io/scrape=true.
+      // Sans ce filtre, Alloy tenterait de scraper TOUS les pods du cluster,
+      // y compris ceux qui n'exposent pas de /metrics -> des milliers
+      // d'erreurs de connexion dans les logs.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+        regex         = "true"
+        action        = "keep"
+      }
+
+      // Regle 2 : chemin personnalise via l'annotation prometheus.io/path.
+      // __metrics_path__ est un label SPECIAL lu par prometheus.scrape.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_path"]
+        regex         = "(.+)"
+        target_label  = "__metrics_path__"
+        action        = "replace"
+      }
+
+      // Regle 3 : recomposer adresse:port depuis l'annotation prometheus.io/port.
+      // `separator` colle les deux sources avec ";" puis la regex les redecoupe.
+      // Cette regle est l'idiome standard, apprenez-la par coeur.
+      rule {
+        source_labels = ["__address__", "__meta_kubernetes_pod_annotation_prometheus_io_port"]
+        separator     = ";"
+        regex         = "([^:]+)(?::\d+)?;(\d+)"
+        replacement   = "$1:$2"
+        target_label  = "__address__"
+        action        = "replace"
+      }
+
+      // Regles 4 a 7 : les labels d'identite. Ce sont eux qui permettront de
+      // faire  sum by (namespace) (...)  dans Grafana, et surtout de JOINDRE
+      // metriques et logs sur les memes cles.
+      // REGLE D'OR : utilisez EXACTEMENT les memes noms de labels pour les
+      // metriques et pour les logs (namespace, pod, app). C'est ce qui rend
+      // la correlation metriques <-> logs possible en un clic dans Grafana.
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        target_label  = "container"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app"]
+        target_label  = "app"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_node_name"]
+        target_label  = "node"
+      }
+    }
+
+    // Le scraper proprement dit. Il tire (`pull`) /metrics sur chaque cible.
+    prometheus.scrape "pods" {
+      targets    = discovery.relabel.annotated_pods.output
+      forward_to = [prometheus.relabel.cleanup.receiver]
+
+      // INTERVALLE DE SCRAPE : le curseur cout / resolution.
+      //  - 15 s : standard, bon compromis.
+      //  - 60 s : divise le volume par 4, mais vous ratez les pics courts.
+      //  - 5 s  : uniquement pour du debug ponctuel.
+      // Regle a retenir : la duree de vos `rate(...[X])` doit valoir AU MOINS
+      // 4 x l'intervalle de scrape. Avec un scrape de 15 s, rate([1m]) est le
+      // minimum viable ; en dessous vous obtiendrez des trous et du "No data".
+      scrape_interval = "15s"
+      scrape_timeout  = "10s"
+    }
+
+    // Deuxieme etage de relabeling, applique cette fois aux METRIQUES elles-memes
+    // (et non aux cibles). C'est ici qu'on maitrise le COUT.
+    prometheus.relabel "cleanup" {
+      forward_to = [prometheus.remote_write.mimir.receiver]
+
+      // On jette les metriques de buckets Java tres verbeuses dont on ne se
+      // sert pas. Chaque bucket supprime = une serie de moins facturee.
+      // En Grafana Cloud, la facture est basee sur le nombre de series actives :
+      // ce bloc est litteralement de l'argent economise, et c'est un sujet
+      // d'avant-vente extremement concret.
+      rule {
+        source_labels = ["__name__"]
+        regex         = "jvm_gc_pause_seconds_bucket|jvm_buffer_.*"
+        action        = "drop"
+      }
+
+      // Ajoute un label `cluster` a tout : indispensable des qu'un client a
+      // plusieurs clusters qui poussent vers le meme Mimir.
+      rule {
+        target_label = "cluster"
+        replacement  = "minikube-lab"
+        action       = "replace"
+      }
+    }
+
+    // =========================================================================
+    // ENVOI VERS MIMIR (protocole Prometheus remote_write)
+    // =========================================================================
+    prometheus.remote_write "mimir" {
+      endpoint {
+        url = "http://mimir.observability.svc.cluster.local:8080/api/v1/push"
+
+        // En Grafana Cloud on ajouterait ici :
+        //   basic_auth { username = "123456"  password = sys.env("GRAFANA_CLOUD_TOKEN") }
+        // et pour un Mimir multi-tenant :
+        //   headers = { "X-Scope-OrgID" = "equipe-paiement" }
+
+        // -------------------------------------------------------------------
+        // LA QUEUE : le sujet de support n°1 sur remote_write.
+        // -------------------------------------------------------------------
+        // Alloy met les echantillons en file d'attente EN MEMOIRE puis les
+        // envoie par lots. Si Mimir ralentit ou renvoie des 429, la file grossit.
+        // Metriques a surveiller (elles existent dans Alloy lui-meme) :
+        //   prometheus_remote_storage_samples_pending
+        //   prometheus_remote_storage_samples_dropped_total
+        //   prometheus_remote_storage_shards
+        // Si `shards` est colle au max et `pending` monte, vous perdez des
+        // donnees. Diagnostic type que vous ferez chez un client.
+        queue_config {
+          capacity             = 10000
+          max_shards           = 20
+          min_shards           = 1
+          max_samples_per_send = 2000
+          batch_send_deadline  = "5s"
+          // Politique de retry en cas de 429 (rate limit cote Mimir).
+          retry_on_http_429    = true
+        }
+      }
+
+      // WAL local : si Mimir est indisponible, Alloy garde les echantillons sur
+      // disque et les rejoue au retour. Sans ca, une coupure de 10 minutes =
+      // 10 minutes de trou definitif dans vos graphes.
+      wal {
+        truncate_frequency = "2h"
+        min_keepalive_time = "5m"
+        max_keepalive_time = "8h"
+      }
+
+      external_labels = {
+        collector = "alloy",
+      }
+    }
+
+    // =========================================================================
+    // PARTIE 2 - LOGS : collecte, parsing, envoi vers Loki
+    // =========================================================================
+
+    // On repart de la meme decouverte de pods, mais avec un filtrage different :
+    // on collecte les logs de TOUS les pods des namespaces qui nous interessent,
+    // qu'ils exposent des metriques ou non.
+    discovery.relabel "pod_logs" {
+      targets = discovery.kubernetes.pods.targets
+
+      // On limite aux namespaces `apps` et `observability`. Sans ce filtre on
+      // ingererait aussi kube-system : beaucoup de volume, peu de valeur.
+      // Choisir CE QU'ON N'INGERE PAS est la premiere optimisation de cout
+      // sur une plateforme de logs.
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        regex         = "apps|observability"
+        action        = "keep"
+      }
+
+      // MEMES NOMS DE LABELS que pour les metriques : c'est ce qui permet,
+      // depuis un panel de metriques, de sauter vers les logs du meme pod.
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        target_label  = "container"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app"]
+        target_label  = "app"
+      }
+    }
+
+    // Lit les logs via l'API Kubernetes (equivalent de `kubectl logs -f`).
+    // Alternative a grande echelle : local.file_match sur /var/log/pods/**
+    // + loki.source.file, qui ne sollicite pas l'API server.
+    loki.source.kubernetes "pods" {
+      targets    = discovery.relabel.pod_logs.output
+      forward_to = [loki.process.parse_json.receiver]
+    }
+
+    // =========================================================================
+    // PIPELINE DE TRAITEMENT DES LOGS
+    // =========================================================================
+    // Un `loki.process` enchaine des STAGES. L'ordre compte enormement.
+    loki.process "parse_json" {
+      forward_to = [loki.write.loki.receiver]
+
+      // STAGE 1 : parser le JSON produit par logback-spring.xml.
+      // Les champs extraits vont dans une map temporaire "extracted",
+      // ILS NE DEVIENNENT PAS des labels automatiquement. C'est volontaire :
+      // sinon on creerait un stream par valeur.
+      stage.json {
+        expressions = {
+          level    = "level",
+          logger   = "logger_name",
+          message  = "message",
+          traceId  = "traceId",
+          app      = "app",
+          ts       = "@timestamp",
+        }
+      }
+
+      // STAGE 2 : utiliser l'horodatage DE L'APPLICATION, pas celui de
+      // l'ingestion. Sans ce stage, un agent qui rattrape 10 minutes de retard
+      // ecrase tous les logs a l'instant present et votre chronologie
+      // d'incident devient fausse. Piege tres courant.
+      stage.timestamp {
+        source = "ts"
+        format = "2006-01-02T15:04:05.000-0700"
+      }
+
+      // STAGE 3 : promouvoir SEULEMENT `level` en label.
+      // Pourquoi lui ? 5 valeurs possibles (TRACE..ERROR) -> cardinalite
+      // negligeable, et c'est le filtre le plus utilise au monde.
+      // Pourquoi PAS traceId ? cardinalite infinie -> Loki exploserait.
+      // On le retrouvera quand meme avec  | json | traceId = "abc".
+      stage.labels {
+        values = {
+          level = "level",
+        }
+      }
+
+      // STAGE 4 : structured metadata (Loki 3+). Attache traceId a la ligne
+      // SANS creer de stream. C'est la bonne reponse au dilemme cardinalite.
+      stage.structured_metadata {
+        values = {
+          traceId = "traceId",
+        }
+      }
+
+      // STAGE 5 : GENERER UNE METRIQUE A PARTIR DES LOGS.
+      // Tres puissant : on obtient un compteur Prometheus d'erreurs meme pour
+      // une application qui n'expose aucune metrique (legacy, boite noire).
+      // Argument de vente classique : "instrumentez sans toucher au code".
+      stage.metrics {
+        metric.counter {
+          name        = "log_lines_error_total"
+          description = "Nombre de lignes de log de niveau ERROR"
+          source      = "level"
+          value       = "ERROR"
+          action      = "inc"
+          max_idle_duration = "24h"
+        }
+      }
+
+      // STAGE 6 : echantillonnage. Decommentez pour ne garder que 10% des logs
+      // en cas de tempete. Sur une appli tres verbeuse, c'est la difference
+      // entre une facture raisonnable et une facture qui double.
+      // stage.sampling {
+      //   rate = 0.1
+      // }
+    }
+
+    // Les metriques generees par stage.metrics doivent etre exposees puis
+    // scrapees pour arriver dans Mimir. Alloy s'auto-scrape via ce composant.
+    loki.write "loki" {
+      endpoint {
+        url = "http://loki.observability.svc.cluster.local:3100/loki/api/v1/push"
+        // Multi-tenant Loki : headers = { "X-Scope-OrgID" = "equipe-paiement" }
+      }
+      external_labels = {
+        cluster = "minikube-lab",
+      }
+    }
+
+    // =========================================================================
+    // PARTIE 3 - AUTO-SUPERVISION D'ALLOY
+    // =========================================================================
+    // Alloy expose ses PROPRES metriques. Les surveiller n'est pas optionnel :
+    // si l'agent tombe, tous vos dashboards deviennent vides et vos alertes
+    // se taisent. Un monitoring silencieux est pire qu'un monitoring absent.
+    // Metriques a connaitre :
+    //   alloy_build_info
+    //   prometheus_remote_storage_samples_failed_total
+    //   loki_write_dropped_entries_total
+    prometheus.exporter.self "alloy" {}
+
+    prometheus.scrape "alloy_self" {
+      targets    = prometheus.exporter.self.alloy.targets
+      forward_to = [prometheus.relabel.cleanup.receiver]
+      scrape_interval = "30s"
+    }
+
+    // =========================================================================
+    // PARTIE 4 - METRIQUES DU CLUSTER (kubelet / cAdvisor)
+    // =========================================================================
+    // cAdvisor (integre au kubelet) fournit CPU, memoire, reseau et disque par
+    // conteneur. C'est la source de container_cpu_usage_seconds_total et
+    // container_memory_working_set_bytes, les deux metriques que vous
+    // utiliserez le plus pour parler capacite et cout avec un client.
+    discovery.kubernetes "nodes" {
+      role = "node"
+    }
+
+    discovery.relabel "cadvisor" {
+      targets = discovery.kubernetes.nodes.targets
+      rule {
+        // On tape l'API server, qui proxifie vers le kubelet du noeud.
+        // C'est le chemin le plus portable (fonctionne meme si le port 10250
+        // du kubelet n'est pas joignable directement).
+        target_label = "__address__"
+        replacement  = "kubernetes.default.svc.cluster.local:443"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_node_name"]
+        regex         = "(.+)"
+        target_label  = "__metrics_path__"
+        replacement   = "/api/v1/nodes/$1/proxy/metrics/cadvisor"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_node_name"]
+        target_label  = "node"
+      }
+    }
+
+    prometheus.scrape "cadvisor" {
+      targets    = discovery.relabel.cadvisor.output
+      forward_to = [prometheus.relabel.drop_noisy_cadvisor.receiver]
+      scheme     = "https"
+      scrape_interval = "30s"
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      tls_config {
+        ca_file              = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        insecure_skip_verify = false
+      }
+    }
+
+    // cAdvisor est EXTREMEMENT verbeux : plusieurs centaines de series par
+    // conteneur. Sur un vrai cluster c'est souvent la premiere source de
+    // cardinalite. On garde une liste blanche des metriques reellement utiles.
+    // Ce bloc, presente a un client, montre immediatement qu'on sait maitriser
+    // le cout d'une plateforme d'observabilite.
+    prometheus.relabel "drop_noisy_cadvisor" {
+      forward_to = [prometheus.remote_write.mimir.receiver]
+      rule {
+        source_labels = ["__name__"]
+        regex = "container_(cpu_usage_seconds_total|memory_working_set_bytes|memory_usage_bytes|network_receive_bytes_total|network_transmit_bytes_total|fs_usage_bytes|cpu_cfs_throttled_seconds_total)"
+        action = "keep"
+      }
+      // On supprime les series des conteneurs "pause" (infra k8s) qui n'ont
+      // aucun interet metier.
+      rule {
+        source_labels = ["container"]
+        regex  = "POD|"
+        action = "drop"
+      }
+    }
+
+    // =========================================================================
+    // PARTIE 5 - RECEPTION OTLP (traces / metriques / logs pousses par l'appli)
+    // =========================================================================
+    // Alloy peut aussi RECEVOIR en push, au format OpenTelemetry. C'est le
+    // chemin standard pour les traces. On l'active ici : l'API Java peut deja
+    // envoyer ses traces vers alloy:4317 (variable OTEL_EXPORTER_OTLP_ENDPOINT).
+    // Il ne manque que Tempo pour les stocker -> c'est l'extension naturelle
+    // de ce lab, et le pont vers "les 3 piliers".
+    otelcol.receiver.otlp "default" {
+      grpc { endpoint = "0.0.0.0:4317" }
+      http { endpoint = "0.0.0.0:4318" }
+      output {
+        metrics = [otelcol.processor.batch.default.input]
+        traces  = [otelcol.processor.batch.default.input]
+      }
+    }
+
+    // Le batch processor est OBLIGATOIRE dans tout pipeline OTel serieux :
+    // il regroupe les spans avant l'envoi. Sans lui, un span = une requete
+    // reseau, et le collecteur s'effondre sous la charge.
+    otelcol.processor.batch "default" {
+      timeout             = "2s"
+      send_batch_size     = 8192
+      send_batch_max_size = 16384
+      output {
+        metrics = [otelcol.exporter.prometheus.default.input]
+        traces  = []
+      }
+    }
+
+    // Convertit des metriques OTLP en metriques Prometheus, puis les pousse
+    // dans le meme pipeline que le reste. Alloy sert ici de TRADUCTEUR entre
+    // deux ecosystemes : c'est exactement son role dans une migration.
+    otelcol.exporter.prometheus "default" {
+      forward_to = [prometheus.remote_write.mimir.receiver]
+    }
+
+    // Pour ajouter Tempo plus tard, il suffira de decommenter :
+    // otelcol.exporter.otlp "tempo" {
+    //   client { endpoint = "tempo.observability.svc.cluster.local:4317"
+    //            tls { insecure = true } }
+    // }
+    // ...et de mettre [otelcol.exporter.otlp.tempo.input] dans traces.

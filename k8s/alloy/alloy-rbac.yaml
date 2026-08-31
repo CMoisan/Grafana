@@ -1,0 +1,59 @@
+# =============================================================================
+# RBAC POUR ALLOY
+# =============================================================================
+# Alloy a besoin d'interroger l'API Kubernetes pour :
+#  - DECOUVRIR les pods a scraper (discovery.kubernetes) ;
+#  - LIRE les logs des pods (loki.source.kubernetes) ;
+#  - enrichir les donnees avec les metadonnees (labels, annotations, node).
+#
+# Principe du moindre privilege : uniquement get/list/watch, aucune ecriture.
+# Un client en environnement regule vous demandera CE fichier en premier.
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alloy
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - nodes/metrics
+      - services
+      - endpoints
+      - pods
+      - events
+      - namespaces
+    verbs: ["get", "list", "watch"]
+  # `pods/log` : indispensable a loki.source.kubernetes, qui lit les logs via
+  # l'API k8s plutot que via les fichiers du noeud. Avantage : pas de hostPath,
+  # donc compatible avec des clusters verrouilles (OpenShift, PSA restricted).
+  # Inconvenient : ca passe par l'API server, donc plus couteux a tres grande
+  # echelle. A grande echelle on repasse sur la lecture de /var/log/pods.
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: alloy
+subjects:
+  - kind: ServiceAccount
+    name: alloy
+    namespace: observability

@@ -1,0 +1,38 @@
+# =============================================================================
+# NORMALISATION DES FINS DE LIGNE
+# =============================================================================
+# Sans ce fichier, Git sous Windows convertit tout en CRLF au checkout. Or :
+#  - un script shell avec des CRLF echoue dans un conteneur Linux
+#    ("bad interpreter: /bin/sh^M") ;
+#  - la config Alloy et les manifestes k8s partent tels quels dans des images
+#    Linux.
+# On force donc LF partout, SAUF pour les scripts Windows qui doivent rester
+# en CRLF. C'est indispensable pour un depot travaille depuis plusieurs OS.
+# =============================================================================
+
+# Par defaut : detection auto, normalise en LF dans le depot
+* text=auto eol=lf
+
+# Scripts et fichiers destines a Linux / conteneurs : LF strict
+*.sh        text eol=lf
+*.js        text eol=lf
+*.java      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.json      text eol=lf
+*.xml       text eol=lf
+*.md        text eol=lf
+*.alloy     text eol=lf
+Dockerfile  text eol=lf
+.dockerignore text eol=lf
+
+# Scripts Windows : CRLF, sinon PowerShell et cmd peuvent mal se comporter
+*.ps1       text eol=crlf
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+
+# Binaires : jamais de conversion
+*.png       binary
+*.jpg       binary
+*.jar       binary
+*.zip       binary

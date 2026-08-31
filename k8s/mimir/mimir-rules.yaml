@@ -1,0 +1,145 @@
+# =============================================================================
+# REGLES MIMIR : RECORDING RULES + ALERTES
+# =============================================================================
+# Monte dans /data/rules/anonymous/ (tenant = anonymous car multitenancy off).
+#
+# DEUX TYPES DE REGLES, DEUX USAGES TRES DIFFERENTS :
+#
+# 1. RECORDING RULE : pre-calcule une requete lourde a intervalle regulier et
+#    stocke le resultat comme une nouvelle metrique. Un dashboard qui affichait
+#    un p99 sur 30 jours en 40 s l'affiche en 200 ms. C'est LE levier de perf
+#    numero un, et le premier conseil a donner a un client dont "Grafana rame".
+#    Convention de nommage officielle :
+#        niveau:metrique:operations
+#    ex : job:http_requests:rate5m
+#
+# 2. ALERTING RULE : evalue une condition ; si vraie pendant `for`, envoie a
+#    Alertmanager. Evaluee cote Mimir, donc independante de Grafana.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mimir-rules
+  namespace: observability
+data:
+  orders-api.yaml: |
+    namespace: orders
+    groups:
+      # ---------------------------------------------------------------------
+      - name: orders-api-recording
+        interval: 30s
+        rules:
+          # Trafic total par service (le "R" de RED : Rate)
+          - record: job:http_requests:rate5m
+            expr: sum by (application) (rate(http_server_requests_seconds_count[5m]))
+
+          # Erreurs serveur uniquement (le "E" de RED : Errors)
+          # Notez `status=~"5.."` : les 4xx sont EXCLUS volontairement.
+          - record: job:http_errors:rate5m
+            expr: sum by (application) (rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+
+          # Taux d'erreur, en fraction de 0 a 1.
+          # `or vector(0)` evite un panel "No data" quand il n'y a aucun trafic.
+          - record: job:http_error_ratio:rate5m
+            expr: |
+              (
+                job:http_errors:rate5m / job:http_requests:rate5m
+              ) or vector(0)
+
+          # Latence p99 pre-calculee (le "D" de RED : Duration)
+          # Rappel : on somme les BUCKETS par `le` AVANT histogram_quantile.
+          # Inverser les deux (quantile puis somme) donne un resultat FAUX :
+          # c'est l'erreur PromQL la plus repandue.
+          - record: job:http_latency_p99:5m
+            expr: |
+              histogram_quantile(0.99,
+                sum by (application, le) (rate(http_server_requests_seconds_bucket[5m])))
+
+          # SLI de disponibilite : proportion de requetes NON en erreur.
+          - record: job:slo_availability:ratio5m
+            expr: 1 - job:http_error_ratio:rate5m
+
+      # ---------------------------------------------------------------------
+      - name: orders-api-alerts
+        interval: 30s
+        rules:
+          # ALERTE 1 : taux d'erreur eleve.
+          # `for: 2m` = anti-rebond. Sans lui, un pic d'une seconde reveille
+          # quelqu'un a 3h du matin. Regle : `for` >= 2 a 3 intervalles de scrape.
+          - alert: OrdersApiHighErrorRate
+            expr: job:http_error_ratio:rate5m > 0.05
+            for: 2m
+            labels:
+              severity: critical
+              team: orders
+            annotations:
+              summary: "Taux d'erreur 5xx > 5% sur {{ $labels.application }}"
+              description: "Taux actuel : {{ $value | humanizePercentage }} depuis 2 minutes."
+              # Le runbook est OBLIGATOIRE sur une alerte critique. Une alerte
+              # sans procedure de remediation est du bruit, pas du monitoring.
+              runbook_url: "https://runbooks.internal/orders-api/high-error-rate"
+
+          # ALERTE 2 : latence degradee.
+          - alert: OrdersApiHighLatency
+            expr: job:http_latency_p99:5m > 1
+            for: 5m
+            labels:
+              severity: warning
+              team: orders
+            annotations:
+              summary: "p99 > 1s sur {{ $labels.application }}"
+              description: "p99 actuel : {{ $value }}s."
+
+          # ALERTE 3 : plus aucun trafic. Souvent OUBLIEE, et pourtant c'est
+          # elle qui detecte "l'appli est morte" ou "l'agent ne scrape plus".
+          # Une plateforme sans donnees affiche des dashboards verts et vides :
+          # c'est le pire scenario possible.
+          - alert: OrdersApiNoTraffic
+            expr: job:http_requests:rate5m < 0.01
+            for: 10m
+            labels:
+              severity: warning
+              team: orders
+            annotations:
+              summary: "Aucun trafic sur {{ $labels.application }} depuis 10 min"
+
+          # ALERTE 4 : BURN RATE MULTI-FENETRES (le vrai sujet SRE).
+          # SLO vise : 99% de disponibilite sur 30 jours -> budget d'erreur = 1%.
+          # Un "burn rate" de 14.4 signifie : a ce rythme, le budget de 30 jours
+          # est consomme en ~2 jours. On combine une fenetre longue (1h) et une
+          # courte (5m) : la longue evite les faux positifs, la courte garantit
+          # que l'alerte se referme vite quand l'incident est resolu.
+          # Source : Google SRE Workbook, chapitre "Alerting on SLOs".
+          # Savoir expliquer CE mecanisme vous distingue immediatement.
+          - alert: OrdersApiSLOBurnRateFast
+            expr: |
+              (
+                sum(rate(http_server_requests_seconds_count{status=~"5.."}[1h]))
+                / sum(rate(http_server_requests_seconds_count[1h]))
+              ) > (14.4 * 0.01)
+              and
+              (
+                sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+                / sum(rate(http_server_requests_seconds_count[5m]))
+              ) > (14.4 * 0.01)
+            for: 2m
+            labels:
+              severity: critical
+              team: orders
+              slo: availability
+            annotations:
+              summary: "Budget d'erreur consomme 14x trop vite"
+              description: "A ce rythme le budget mensuel est epuise en 2 jours."
+
+          # ALERTE 5 : dependance externe en panne (passerelle de paiement).
+          # Alerte SEPAREE du taux d'erreur global : elle pointe directement la
+          # cause. Une bonne alerte dit QUOI reparer, pas seulement QUE ca casse.
+          - alert: PaymentGatewayDown
+            expr: rate(orders_payments_gateway_failures_total[5m]) > 0.1
+            for: 2m
+            labels:
+              severity: critical
+              team: orders
+            annotations:
+              summary: "La passerelle de paiement echoue"
+              description: "{{ $value }} echecs/s sur les 5 dernieres minutes."

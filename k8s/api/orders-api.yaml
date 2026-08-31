@@ -1,0 +1,134 @@
+# =============================================================================
+# DEPLOIEMENT DE L'API JAVA
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-api
+  namespace: apps
+  labels: { app: orders-api }
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30080
+  selector: { app: orders-api }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: apps
+  labels: { app: orders-api }
+spec:
+  # 2 replicas : indispensable pedagogiquement. Cela vous force a comprendre
+  # que le p99 doit etre calcule SUR L'ENSEMBLE des pods (donc via des buckets
+  # agreges), et pas pod par pod puis moyenne. Avec un seul replica, on peut
+  # ecrire du PromQL faux sans jamais s'en rendre compte.
+  replicas: 2
+  selector:
+    matchLabels: { app: orders-api }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0   # zero downtime pendant les mises a jour
+  template:
+    metadata:
+      labels:
+        app: orders-api
+        version: "1.0.0"
+      annotations:
+        # ------------------------------------------------------------------
+        # CES 3 ANNOTATIONS DECLENCHENT LA COLLECTE PAR ALLOY.
+        # C'est la convention historique de Prometheus, reprise dans notre
+        # config Alloy (discovery.relabel "annotated_pods").
+        # Alternative plus moderne et plus riche : les CRD ServiceMonitor /
+        # PodMonitor de l'operateur Prometheus, qu'Alloy sait aussi lire via
+        # le composant prometheus.operator.podmonitors. A savoir mentionner :
+        # beaucoup de clients ont deja des ServiceMonitor et veulent les garder
+        # en migrant vers Alloy. C'est un argument de migration sans friction.
+        # ------------------------------------------------------------------
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      # Laisse 30 s a l'appli pour finir ses requetes avant le SIGKILL.
+      # Doit etre superieur au spring.lifecycle.timeout-per-shutdown-phase (20 s).
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: orders-api
+          image: orders-api:1.0.0
+          # IfNotPresent + image construite dans le daemon Docker de minikube :
+          # pas besoin de registry. `Always` echouerait car l'image n'existe
+          # sur aucun registre distant.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: SPRING_PROFILES_ACTIVE, value: "k8s" }
+            - { name: APP_ENVIRONMENT, value: "lab" }
+            # Expose le nom du pod a l'application (utile pour du log enrichi).
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: { fieldPath: metadata.name }
+            # Prepare l'envoi de traces vers Alloy (OTLP). Actif des que vous
+            # ajouterez Tempo : l'appli pousse deja, il ne manque que le stockage.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://alloy.observability.svc.cluster.local:4318"
+            - { name: OTEL_SERVICE_NAME, value: "orders-api" }
+
+          # ------------------------------------------------------------------
+          # LES TROIS SONDES : a savoir distinguer parfaitement.
+          # ------------------------------------------------------------------
+          # STARTUP : "as-tu fini de demarrer ?" Tant qu'elle echoue, liveness
+          # et readiness sont SUSPENDUES. C'est la solution propre au probleme
+          # des applications lentes a demarrer (JVM, Spring). Sans elle, il
+          # faudrait mettre un initialDelaySeconds enorme sur la liveness, ce
+          # qui retarderait la detection des vraies pannes.
+          # failureThreshold(30) x periodSeconds(2) = 60 s de budget de demarrage.
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            failureThreshold: 30
+            periodSeconds: 2
+
+          # LIVENESS : "es-tu vivant ?" Si NON -> k8s TUE et RECREE le pod.
+          # Ne JAMAIS y brancher une dependance externe : si la base tombe,
+          # tous les pods redemarreraient en boucle et aggraveraient la panne.
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # READINESS : "peux-tu servir du trafic MAINTENANT ?" Si NON -> le pod
+          # est retire des endpoints du Service, mais reste vivant. C'est ici
+          # qu'on met les dependances, et c'est ce qui permet une degradation
+          # progressive plutot qu'un crash.
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+
+          resources:
+            # requests : ce que le scheduler reserve. La somme des requests
+            # determine si un pod peut etre place sur un noeud.
+            requests: { cpu: 250m, memory: 512Mi }
+            # limits.cpu : ATTENTION, en cas de depassement le conteneur est
+            # THROTTLE (ralenti), pas tue. Cela se voit dans la metrique
+            # container_cpu_cfs_throttled_seconds_total : c'est LA cause n1 des
+            # "latences inexpliquees" sur k8s. Beaucoup d'equipes cherchent des
+            # heures avant de regarder ce compteur.
+            # limits.memory : depassement = OOMKill immediat, sans avertissement.
+            limits:   { cpu: "1", memory: 1Gi }
+
+          lifecycle:
+            preStop:
+              exec:
+                # Pause avant l'arret : le temps que kube-proxy propage le
+                # retrait du pod des endpoints sur tous les noeuds. Sans ce
+                # delai, du trafic continue d'arriver sur un pod qui s'arrete
+                # -> erreurs 502 a chaque deploiement, tres visibles dans vos
+                # dashboards. Astuce classique et tres appreciee en entretien.
+                command: ["sh", "-c", "sleep 5"]

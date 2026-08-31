@@ -1,0 +1,30 @@
+# =============================================================================
+# PROVIDER DE DASHBOARDS
+# Indique a Grafana : "charge tous les .json trouves dans ce dossier".
+# Les fichiers JSON eux-memes arrivent par une ConfigMap generee depuis
+# grafana/dashboards/ (voir scripts/03-deploy.ps1).
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-provider
+  namespace: observability
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'lab-dashboards'
+        orgId: 1
+        folder: 'Orders Lab'      # dossier cree automatiquement dans l'UI
+        type: file
+        # true = si quelqu'un supprime le dashboard dans l'UI, il est supprime.
+        # false = il reste orphelin. Mettre true garde le disque = source de verite.
+        disableDeletion: false
+        # Grafana relit le dossier toutes les 10 s : editez le JSON, sauvegardez,
+        # rafraichissez la page. Boucle de dev tres agreable.
+        updateIntervalSeconds: 10
+        allowUiUpdates: false     # empeche la derive UI vs fichier
+        options:
+          path: /etc/grafana/dashboards
+          # Reproduit l'arborescence de dossiers du disque dans Grafana.
+          foldersFromFilesStructure: false

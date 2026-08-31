@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!--
+    ================================================================================
+    Le parent Spring Boot fournit le "dependency management" : il fixe les versions
+    cohérentes de toutes les libs (Jackson, Micrometer, Logback, JUnit...).
+    On ne met JAMAIS de <version> sur les dépendances qu'il gère.
+    ================================================================================
+  -->
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.4.4</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.grafanalab</groupId>
+  <artifactId>orders-api</artifactId>
+  <version>1.0.0</version>
+  <name>orders-api</name>
+  <description>API de commandes mockee, instrumentee pour la stack Grafana (LGTM)</description>
+
+  <properties>
+    <java.version>21</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Encodeur JSON pour Logback : indispensable pour que Loki parse nos logs en une passe -->
+    <logstash-logback.version>8.0</logstash-logback.version>
+  </properties>
+
+  <dependencies>
+    <!-- ============================ WEB ============================ -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- ====================== OBSERVABILITE ======================== -->
+    <!--
+      Actuator expose /actuator/health (sondes k8s) et /actuator/prometheus.
+      C'est LE point d'entree que Alloy va scraper.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <!--
+      Micrometer = la facade de metriques (l'equivalent de SLF4J mais pour les metriques).
+      Le "registry prometheus" transforme les compteurs/timers en format texte OpenMetrics.
+    -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+    <!--
+      Micrometer Tracing + OTel : genere un traceId/spanId par requete.
+      On ne deploie pas Tempo dans ce lab, MAIS le traceId est injecte dans les logs
+      (voir logback-spring.xml) : c'est ce qui permet la correlation logs <-> traces
+      dans Grafana. C'est un point cle en entretien Solutions Engineer.
+    -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-tracing-bridge-otel</artifactId>
+    </dependency>
+    <!--
+      Encodeur JSON structure. Grafana Loki adore les logs JSON :
+      un seul parser | json et tous les champs deviennent des labels temporaires.
+    -->
+    <dependency>
+      <groupId>net.logstash.logback</groupId>
+      <artifactId>logstash-logback-encoder</artifactId>
+      <version>${logstash-logback.version}</version>
+    </dependency>
+
+    <!-- ============================ TESTS =========================== -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

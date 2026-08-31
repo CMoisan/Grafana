@@ -1,0 +1,23 @@
+target/
+.idea/
+*.iml
+*.log
+.DS_Store
+k6-results/
+
+# =============================================================================
+# VAULT OBSIDIAN PERSONNEL - VOLONTAIREMENT NON VERSIONNE ICI
+# =============================================================================
+# "Solutions Engineer/" contient des donnees personnelles sensibles :
+# pretentions salariales et strategie de negociation, faiblesses identifiees,
+# objections a preparer, noms d'employeurs, et le fait meme d'etre en recherche.
+#
+# Ce depot etant PUBLIC, ces notes ne doivent pas y figurer : GitHub indexe et
+# met en cache, une suppression ulterieure n'efface pas les forks ni l'historique.
+#
+# Deux options propres :
+#   1. passer ce depot en prive  -> on peut alors tout versionner ensemble
+#   2. garder le vault dans un depot prive separe (recommande si le lab doit
+#      rester public comme piece de portfolio)
+# =============================================================================
+Solutions Engineer/

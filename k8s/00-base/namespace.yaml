@@ -1,0 +1,20 @@
+# =============================================================================
+# NAMESPACES
+# On separe volontairement la plateforme d'observabilite des applications.
+# En vrai chez un client, `observability` appartient a l'equipe SRE et `apps`
+# aux equipes produit : ce sont des ResourceQuota, des RBAC et des budgets
+# differents. Autant prendre l'habitude tout de suite.
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    name: observability
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps
+  labels:
+    name: apps
