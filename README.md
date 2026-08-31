@@ -108,10 +108,32 @@ api/                    API Java (Spring Boot 3, Java 21)
 
 k8s/                    manifestes Kubernetes, un dossier par composant
 grafana/dashboards/     dashboards JSON (provisionnés automatiquement)
+exercices/              7 environnements d'entraînement, du plus simple au métier
 k6/                     5 tests de charge, du smoke à la simulation réaliste
 scripts/                pilotage PowerShell
 docs/                   le cours : parcours, PromQL, LogQL, SLO, entretien
 ```
+
+---
+
+## Les exercices
+
+Le lab ci-dessus est l'**environnement de référence** : complet et sain.
+Le dossier [exercices/](exercices/) contient sept environnements qui le dégradent,
+le fragmentent ou le mettent en situation pour créer un problème à résoudre —
+chacun avec son énoncé et ses critères de réussite vérifiables.
+
+| # | Exercice | Durée |
+|---|---|---|
+| 01 | [Instrumenter de zéro](exercices/01-instrumenter-de-zero/ENONCE.md) | 3–4 h |
+| 02 | [Incident de cardinalité](exercices/02-incident-de-cardinalite/ENONCE.md) | 2–3 h |
+| 03 | [Dev et prod](exercices/03-dev-et-prod/ENONCE.md) | 1–2 j |
+| 04 | [Migration Prometheus](exercices/04-migration-prometheus/ENONCE.md) | ½–1 j |
+| 05 | [Legacy sans métriques](exercices/05-legacy-sans-metriques/ENONCE.md) | 3–4 h |
+| 06 | [Réduction de coût](exercices/06-reduction-de-cout/ENONCE.md) | 4–6 h |
+| 07 | [Discovery et démo](exercices/07-discovery-et-demo/ENONCE.md) | 1 j ×3 |
+
+→ [exercices/README.md](exercices/README.md) pour l'ordre conseillé.
 
 ---
 
