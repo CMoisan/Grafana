@@ -215,3 +215,77 @@ Face à un client bloqué, l'ordre est toujours le même :
 Cette méthode, énoncée telle quelle en entretien, vaut mieux que n'importe quelle
 réponse encyclopédique : elle montre que vous savez travailler sous pression avec
 un client au téléphone.
+
+---
+
+## Démarrage du cluster : les pannes propres à Hyper-V
+
+Cette section couvre le premier lancement, qui est le moment où l'on perd le plus
+de temps.
+
+### `minikube start` refuse de démarrer
+
+| Message | Cause | Correction |
+|---|---|---|
+| *« This driver requires elevated permissions »* | session non élevée | PowerShell **en administrateur** — obligatoire à chaque `minikube start` avec Hyper-V |
+| *« Hyper-V is not available »* | fonctionnalité non activée | `Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All` puis **redémarrer** |
+| `HypervisorPresent = False` après redémarrage | VT-x / AMD-V désactivé dans le BIOS | à activer dans l'UEFI — aucun cluster local ne marchera sans |
+| *« no External vswitch nor Default Switch found »* | aucun commutateur virtuel | voir ci-dessous |
+
+### ⚠️ Le piège du « Default Switch », à connaître avant de perdre une soirée
+
+Le commutateur par défaut d'Hyper-V utilise un NAT dont **le sous-réseau change à
+chaque redémarrage de Windows**. Conséquence : le cluster démarre parfaitement le
+premier jour, et le lendemain `minikube start` échoue ou reste bloqué, parce que
+minikube a mémorisé une IP qui n'existe plus.
+
+**Symptômes** : `minikube start` qui tourne indéfiniment, ou
+`Unable to connect to the server: dial tcp ... i/o timeout` sur toute commande
+`kubectl`.
+
+**Correction rapide** — recréer le profil, les manifestes étant tous versionnés
+il n'y a rien à perdre :
+
+```powershell
+minikube delete --profile=grafana-lab
+.\scripts\01-start-minikube.ps1
+.\scripts\02-build-api.ps1
+.\scripts\03-deploy.ps1
+```
+
+**Correction durable** — créer un commutateur **externe**, dont l'IP est stable.
+À faire en administrateur, en remplaçant le nom de l'adaptateur par le vôtre
+(`Get-NetAdapter` pour le trouver) :
+
+```powershell
+New-VMSwitch -Name "minikube-ext" -NetAdapterName "Ethernet" -AllowManagementOS $true
+```
+
+Puis, dans `scripts/01-start-minikube.ps1`, remplacer `Default Switch` par
+`minikube-ext`.
+
+> Attention : créer un commutateur externe coupe brièvement la connexion réseau de
+> l'hôte, et c'est plus capricieux sur Wi-Fi que sur Ethernet.
+
+### Un composant reste en `CrashLoopBackOff` au premier déploiement
+
+C'est le risque résiduel le plus probable : Mimir, Loki et Alloy lisent une
+**configuration embarquée dans une ConfigMap**. Kubernetes ne la valide pas — pour
+lui, ce n'est qu'une chaîne de caractères. Une clé inconnue ou renommée entre deux
+versions fait échouer le démarrage.
+
+```powershell
+kubectl -n observability logs -l app=mimir --tail=50
+kubectl -n observability logs -l app=loki  --tail=50
+```
+
+Le message nomme **précisément** la clé fautive (`field X not found in type Y`).
+Corriger la clé dans le fichier `*-config.yaml`, puis :
+
+```powershell
+kubectl apply -f k8s/mimir
+kubectl -n observability rollout restart statefulset/mimir
+```
+
+> La configuration Alloy, elle, a été validée hors ligne avec
+> `alloy validate config.alloy` : elle est saine.

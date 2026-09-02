@@ -62,12 +62,17 @@ data:
       }
 
       // Regle 3 : recomposer adresse:port depuis l'annotation prometheus.io/port.
+      // PIEGE VERIFIE : la syntaxe Alloy interprete les chaines comme Go.
+      // Un simple \d y est une sequence d echappement INVALIDE et Alloy refuse
+      // de demarrer (unknown escape sequence). Il faut ecrire \\d pour que le
+      // moteur de regex recoive \d.
+      // A verifier avant tout deploiement :  alloy validate config.alloy
       // `separator` colle les deux sources avec ";" puis la regex les redecoupe.
       // Cette regle est l'idiome standard, apprenez-la par coeur.
       rule {
         source_labels = ["__address__", "__meta_kubernetes_pod_annotation_prometheus_io_port"]
         separator     = ";"
-        regex         = "([^:]+)(?::\d+)?;(\d+)"
+        regex         = "([^:]+)(?::\\d+)?;(\\d+)"
         replacement   = "$1:$2"
         target_label  = "__address__"
         action        = "replace"
