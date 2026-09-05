@@ -63,6 +63,20 @@ C'est l'argument central de Grafana face à une stack hétérogène.
 
 ## Démarrage rapide
 
+> [!] **Deux chemins, choisissez en connaissance de cause.**
+>
+> **Le chemin rapide** (ci-dessous) déploie tout en trois commandes. Utile pour
+> voir la stack vivre une première fois, ou pour remonter l'environnement après
+> l'avoir cassé.
+>
+> **Le chemin qui apprend** : [exercice 00](exercices/00-deployer-a-la-main/ENONCE.md).
+> On déploie à la main, composant par composant, en lisant la documentation
+> officielle. C'est plus long — 3 à 5 h contre 20 minutes — et c'est la seule
+> façon de savoir refaire devant un client, sans vos scripts.
+>
+> Si vous ne devez en faire qu'un, faites le 00.
+
+
 > **PowerShell ADMINISTRATEUR obligatoire** pour les scripts 01 et 02 : ce lab
 > tourne sur le driver **Hyper-V**, sans Docker Desktop, et Hyper-V refuse de
 > piloter des machines virtuelles depuis une session non élevée. Activation
@@ -119,19 +133,28 @@ docs/                   le cours : parcours, PromQL, LogQL, SLO, entretien
 ## Les exercices
 
 Le lab ci-dessus est l'**environnement de référence** : complet et sain.
-Le dossier [exercices/](exercices/) contient sept environnements qui le dégradent,
-le fragmentent ou le mettent en situation pour créer un problème à résoudre —
-chacun avec son énoncé et ses critères de réussite vérifiables.
+Le dossier [exercices/](exercices/) contient douze environnements qui le dégradent,
+l'étendent ou le mettent en situation — chacun avec son énoncé et ses critères de
+réussite vérifiables.
+
+> **Commencez par le 00.** Les scripts déploient tout en trois commandes, ce qui
+> est pratique une fois et catastrophique pour apprendre. L'exercice 00 les
+> **remplace** : on déploie à la main, en lisant la documentation officielle.
 
 | # | Exercice | Durée |
 |---|---|---|
+| 00 | [⭐⭐ Déployer à la main](exercices/00-deployer-a-la-main/ENONCE.md) | 3–5 h |
 | 01 | [Instrumenter de zéro](exercices/01-instrumenter-de-zero/ENONCE.md) | 3–4 h |
-| 02 | [Incident de cardinalité](exercices/02-incident-de-cardinalite/ENONCE.md) | 2–3 h |
-| 03 | [Dev et prod](exercices/03-dev-et-prod/ENONCE.md) | 1–2 j |
+| 02 | [⭐ Incident de cardinalité](exercices/02-incident-de-cardinalite/ENONCE.md) | 2–3 h |
+| 03 | [⭐⭐ Dev et prod](exercices/03-dev-et-prod/ENONCE.md) | 1–2 j |
 | 04 | [Migration Prometheus](exercices/04-migration-prometheus/ENONCE.md) | ½–1 j |
 | 05 | [Legacy sans métriques](exercices/05-legacy-sans-metriques/ENONCE.md) | 3–4 h |
-| 06 | [Réduction de coût](exercices/06-reduction-de-cout/ENONCE.md) | 4–6 h |
-| 07 | [Discovery et démo](exercices/07-discovery-et-demo/ENONCE.md) | 1 j ×3 |
+| 06 | [⭐⭐ Réduction de coût](exercices/06-reduction-de-cout/ENONCE.md) | 4–6 h |
+| 07 | [⭐⭐⭐ Discovery et démo](exercices/07-discovery-et-demo/ENONCE.md) | 1 j ×3 |
+| 08 | [⭐⭐ Tempo, les traces](exercices/08-tempo-les-trois-piliers/ENONCE.md) | 4–6 h |
+| 09 | [⭐ Pyroscope](exercices/09-pyroscope-le-quatrieme-pilier/ENONCE.md) | 3–4 h |
+| 10 | [⭐⭐ Passage à l'échelle](exercices/10-passage-a-l-echelle/ENONCE.md) | 1–2 j |
+| 11 | [⭐⭐⭐ Cloud vs self-hosted](exercices/11-grafana-cloud-vs-self-hosted/ENONCE.md) | 4–6 h |
 
 → [exercices/README.md](exercices/README.md) pour l'ordre conseillé.
 
@@ -157,15 +180,16 @@ qui brûle son budget d'erreur en direct ».
 
 ---
 
-## Extensions naturelles (dans l'ordre de valeur)
+## Extensions — désormais des exercices
 
-1. **Tempo** (traces) — la config est déjà prête : Alloy reçoit l'OTLP, les
-   `derivedFields` de Loki et les exemplars de Mimir pointent déjà vers `tempo`.
-   Il ne manque que le StatefulSet. C'est l'étape qui complète les trois piliers.
-2. **Pyroscope** (profiling continu) — le quatrième pilier, racheté par Grafana.
-   Répond à « ma requête est lente », pas seulement « quelle requête est lente ».
-3. **Grafana Alloy en mode cluster** + Mimir en microservices — pour parler
-   passage à l'échelle.
-4. **Grafana Cloud** — refaire le même lab en poussant vers Grafana Cloud pour
-   comparer self-hosted et SaaS. C'est exactement la conversation que vous
-   aurez avec un client.
+Ce qui était listé ici comme « pistes pour plus tard » est devenu un exercice à
+part entière, avec un énoncé et des critères :
+
+- **Tempo** → [exercice 08](exercices/08-tempo-les-trois-piliers/ENONCE.md).
+  Le terrain est déjà préparé : Alloy reçoit l'OTLP, les `derivedFields` de Loki
+  et les exemplars de Mimir pointent déjà vers un uid `tempo`. Il manque le
+  StatefulSet, et c'est à vous de l'écrire.
+- **Pyroscope** → [exercice 09](exercices/09-pyroscope-le-quatrieme-pilier/ENONCE.md).
+- **Alloy en cluster + Mimir en microservices** → [exercice 10](exercices/10-passage-a-l-echelle/ENONCE.md),
+  dont le livrable n'est pas une plateforme distribuée mais un **seuil chiffré**.
+- **Grafana Cloud** → [exercice 11](exercices/11-grafana-cloud-vs-self-hosted/ENONCE.md).
