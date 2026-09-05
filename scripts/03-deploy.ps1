@@ -66,8 +66,57 @@ kubectl -n apps create configmap k6-lib `
 Write-Host "`nAttente de l'API..." -ForegroundColor DarkGray
 kubectl -n apps rollout status deployment/orders-api --timeout=180s
 
+# ============================================================================
+# VERIFICATION REELLE - et pas un simple affichage
+# ============================================================================
+# Un `kubectl get pods` juste apres un deploiement ne prouve RIEN : il attrape
+# les pods en ContainerCreating et n'a aucune idee de ce qui va se passer
+# ensuite. Annoncer "deploiement termine" a ce moment-la est trompeur.
+#
+# C'est une erreur qu'on paie cher en demo client : on affiche du vert, on
+# passe a la suite, et le dashboard reste vide sans qu'on comprenne pourquoi.
+# On attend donc que CHAQUE composant soit reellement pret, et on echoue
+# bruyamment si l'un d'eux ne l'est pas.
+# ============================================================================
+Write-Host "`n=== Verification des composants ===" -ForegroundColor Cyan
+
+$composants = @(
+  @{ Nom = "mimir";      Ns = "observability"; Label = "app=mimir" }
+  @{ Nom = "loki";       Ns = "observability"; Label = "app=loki" }
+  @{ Nom = "alloy";      Ns = "observability"; Label = "app=alloy" }
+  @{ Nom = "grafana";    Ns = "observability"; Label = "app=grafana" }
+  @{ Nom = "orders-api"; Ns = "apps";          Label = "app=orders-api" }
+)
+
+$echecs = @()
+foreach ($c in $composants) {
+  Write-Host ("  {0,-12} " -f $c.Nom) -NoNewline
+  kubectl -n $c.Ns wait --for=condition=ready pod -l $c.Label --timeout=180s 2>&1 | Out-Null
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "[OK]" -ForegroundColor Green
+  } else {
+    Write-Host "[ECHEC]" -ForegroundColor Red
+    $echecs += $c
+  }
+}
+
+if ($echecs.Count -gt 0) {
+  Write-Host "`n=== $($echecs.Count) composant(s) en echec ===" -ForegroundColor Red
+  foreach ($c in $echecs) {
+    Write-Host "`n--- $($c.Nom) : 15 dernieres lignes de log ---" -ForegroundColor Yellow
+    kubectl -n $c.Ns logs -l $c.Label --tail=15 2>&1 | Out-String | Write-Host
+    Write-Host "--- evenements ---" -ForegroundColor Yellow
+    kubectl -n $c.Ns get events --field-selector "involvedObject.kind=Pod" --sort-by=.lastTimestamp 2>&1 |
+      Select-Object -Last 5 | Out-String | Write-Host
+  }
+  Write-Host "`nLe deploiement N'EST PAS termine." -ForegroundColor Red
+  Write-Host "Le message de log ci-dessus nomme presque toujours la cause exacte." -ForegroundColor Yellow
+  Write-Host "Voir docs\07-troubleshooting.md" -ForegroundColor Yellow
+  exit 1
+}
+
 Write-Host "`n=== Etat final ===" -ForegroundColor Cyan
 kubectl get pods -A -o wide | Select-String "observability|apps"
 
-Write-Host "`nDeploiement termine." -ForegroundColor Green
+Write-Host "`nTous les composants sont prets." -ForegroundColor Green
 Write-Host "Prochaine etape : .\scripts\04-acces.ps1" -ForegroundColor Yellow
