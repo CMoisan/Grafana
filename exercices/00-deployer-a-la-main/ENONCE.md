@@ -31,6 +31,49 @@ Monter la stack complète **à la main**, commande par commande, en comprenant c
 9. Générer du trafic à la main avec `curl`, avant même de lancer k6
 10. À chaque étape, noter ce que vous avez dû chercher dans la documentation
 
+## 🔎 La méthode : comment savoir AVANT de se planter
+
+Trois moments pour attraper une dépendance manquante, du plus artisanal au plus
+mécanique. Apprenez les trois, ils servent dans cet ordre.
+
+**1. Après coup — le réflexe universel, sans aucun outil**
+Un pod bloqué en `ContainerCreating` n'a **pas de logs**, parce que le conteneur
+n'a jamais démarré. `kubectl logs` ne renverra rien et c'est déroutant.
+La réponse est toujours en bas de :
+```
+kubectl -n <ns> describe pod <nom>
+```
+Section **Events**. Elle nomme précisément l'objet manquant. Ce réflexe marche
+pour tout : image introuvable, volume non montable, quota dépassé, nœud saturé.
+
+**2. Avant — lire le bloc `volumes:` du manifeste**
+Un Deployment liste en clair ce dont il a besoin. Cinq lignes à lire :
+```
+volumes:
+  - name: datasources         → configMap: grafana-datasources
+  - name: dashboards-provider → configMap: grafana-dashboards-provider
+  - name: dashboards          → configMap: grafana-dashboards      ← lequel n'est
+  - name: storage             → emptyDir                              pas déclaré ?
+```
+Puis vérifier que chacun existe bien quelque part dans `k8s/`.
+
+**3. Mécaniquement — le script fourni**
+```powershell
+.\scripts\06-verifier-dependances.ps1
+```
+Il compare ce que les manifestes **référencent** à ce qu'ils **déclarent**, et
+affiche la différence. À lancer avant tout déploiement sur un environnement neuf,
+et surtout quand on reprend les manifestes de quelqu'un d'autre — c'est-à-dire
+tout le temps, chez un client.
+
+> [!tip] Ce que ça vous donne en entretien
+> « Comment vous prenez en main un déploiement que vous n'avez pas écrit ? »
+> Répondre « je liste ce que les manifestes référencent sans le déclarer, parce
+> que c'est ce qui bloque en silence » est une réponse d'ingénieur qui a déjà
+> repris un environnement existant.
+
+---
+
 ## 🏁 Critères de réussite
 
 Vous avez terminé quand **toutes** ces cases sont cochées :
