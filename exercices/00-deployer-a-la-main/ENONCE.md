@@ -26,7 +26,7 @@ Monter la stack complète **à la main**, commande par commande, en comprenant c
 4. Déployer **Loki seul**. Même vérification
 5. Se demander, avant de continuer : **pourquoi les backends avant l'agent ?** Écrire la réponse
 6. Déployer **Alloy**. Ouvrir son UI sur :12345 et constater qu'il ne trouve encore aucune cible applicative
-7. Déployer **Grafana**. Vérifier que les datasources sont vertes — et si non, diagnostiquer sans regarder la solution
+7. Déployer **Grafana**. ⚠️ `kubectl apply -f k8s\grafana` ne suffit PAS : le déploiement monte un objet qui n'est **pas déclaré** dans `k8s/`, parce qu'il est *généré* à partir de fichiers du dépôt. Si le pod reste en `ContainerCreating`, `kubectl describe pod` nomme précisément ce qui manque. À vous de trouver quoi, et de le créer
 8. Construire l'image de l'API et la déployer. Regarder les cibles apparaître dans Alloy **en direct**
 9. Générer du trafic à la main avec `curl`, avant même de lancer k6
 10. À chaque étape, noter ce que vous avez dû chercher dans la documentation
@@ -43,6 +43,20 @@ Vous avez terminé quand **toutes** ces cases sont cochées :
 - [ ] Vous pouvez commenter à voix haute pendant que ça se déploie, sans lire de notes
 
 ## ⚠️ Le piège de cet exercice
+
+> [!] **Tout n'est pas déclaratif, et c'est un piège de production.**
+> Un dépôt de manifestes donne l'illusion que `kubectl apply -f k8s/` suffit.
+> En pratique il reste presque toujours des objets **générés** — ConfigMaps
+> construites à partir de fichiers, secrets injectés par la CI, certificats émis
+> par un opérateur. Le manifeste les *monte* sans les *créer*.
+>
+> Le symptôme est toujours le même : un pod bloqué en `ContainerCreating`, sans
+> aucun log — puisque le conteneur n'a jamais démarré. `kubectl logs` ne donne
+> rien, et c'est déroutant la première fois. La réponse est dans les **Events**
+> de `kubectl describe pod`, tout en bas.
+>
+> Retenez la règle : **pas de logs = le conteneur n'a pas démarré = regardez les
+> Events, pas les logs.**
 
 Copier-coller les commandes des scripts sans les lire. Vous aurez le même résultat et appris la même chose que la première fois : rien. La contrainte de cet exercice n'est pas le résultat, c'est **le chemin**. Si vous bloquez, la règle est : documentation officielle d'abord, manifeste commenté ensuite, script en dernier recours — et si vous ouvrez le script, notez-le dans vos trois erreurs.
 
