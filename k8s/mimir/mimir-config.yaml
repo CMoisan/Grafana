@@ -41,6 +41,14 @@ data:
     # plateforme, N equipes, chacune isolee avec ses propres limites.
     multitenancy_enabled: false
 
+    # Mimir ecrit un fichier de suivi des requetes actives. Par defaut il le
+    # place dans son repertoire COURANT, qui n'est pas inscriptible puisque le
+    # conteneur tourne en non-root (runAsUser 10001). Sans ce reglage :
+    #   "open ./metrics-activity.log: permission denied" -> CrashLoopBackOff.
+    # On le renvoie dans le volume persistant.
+    activity_tracker:
+      filepath: /data/metrics-activity.log
+
     server:
       http_listen_port: 8080
       grpc_listen_port: 9095

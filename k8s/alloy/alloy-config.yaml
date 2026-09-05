@@ -254,6 +254,12 @@ data:
       // Les champs extraits vont dans une map temporaire "extracted",
       // ILS NE DEVIENNENT PAS des labels automatiquement. C'est volontaire :
       // sinon on creerait un stream par valeur.
+      // PIEGE JMESPath : les cles commencant par @ (ici @timestamp, produit par
+      // logstash-logback-encoder) sont des tokens speciaux. Il faut les entourer
+      // de guillemets A L'INTERIEUR de l'expression, d'ou le double echappement.
+      // Sans ca : "could not compile JMES expression" et Alloy refuse de demarrer.
+      // A noter : `alloy validate` ne detecte PAS cette erreur, car la
+      // compilation JMESPath a lieu au montage du composant, pas au parsing.
       stage.json {
         expressions = {
           level    = "level",
@@ -261,7 +267,7 @@ data:
           message  = "message",
           traceId  = "traceId",
           app      = "app",
-          ts       = "@timestamp",
+          ts       = "\"@timestamp\"",
         }
       }
 
