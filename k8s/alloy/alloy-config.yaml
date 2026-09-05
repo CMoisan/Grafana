@@ -78,6 +78,33 @@ data:
         action        = "replace"
       }
 
+      // ---------------------------------------------------------------------
+      // DEDUPLICATION - piege classique de `role: pod`, tres peu connu.
+      // ---------------------------------------------------------------------
+      // discovery.kubernetes emet UNE CIBLE PAR PORT DE CONTENEUR declare.
+      // Mimir declare http/grpc/memberlist -> 3 cibles ; Loki en declare 2.
+      // La regle 3 ci-dessus les reecrit TOUTES vers la meme adresse : on se
+      // retrouve a scraper le meme endpoint 3 fois toutes les 15 secondes.
+      //
+      // Les series produites etant identiques, ca ne cree pas d'erreur visible
+      // (c'est pour ca que le piege passe inapercu) mais ca triple la charge de
+      // scrape et fait ecrire plusieurs echantillons dans la meme serie.
+      //
+      // `keepequal` ne garde que les cibles dont le port de conteneur est
+      // EXACTEMENT celui demande par l'annotation. Une cible par pod, enfin.
+      // Note : RE2 n'ayant pas de retro-reference, une regex ne peut pas
+      // comparer deux labels entre eux — d'ou cette action dediee.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_port"]
+        target_label  = "__tmp_port_voulu"
+        action        = "replace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_port_number"]
+        target_label  = "__tmp_port_voulu"
+        action        = "keepequal"
+      }
+
       // Regles 4 a 7 : les labels d'identite. Ce sont eux qui permettront de
       // faire  sum by (namespace) (...)  dans Grafana, et surtout de JOINDRE
       // metriques et logs sur les memes cles.
