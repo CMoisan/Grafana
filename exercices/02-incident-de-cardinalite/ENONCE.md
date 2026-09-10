@@ -13,7 +13,7 @@ Retrouver la cause en partant des symptômes, la corriger, et poser un garde-fou
 ## 🛠️ Déclencher l'incident
 
 ```powershell
-.\exercices-incident-de-cardinalite\declencher.ps1
+.\exercices\02-incident-de-cardinalite\declencher.ps1
 ```
 
 > [!danger] Ne lisez PAS le dossier `manifests\` avant d'avoir diagnostiqué
@@ -30,7 +30,7 @@ redéploie l'API avec une modification, puis génère du trafic. Comptez **5 à
 Pour tout remettre d'aplomb ensuite :
 
 ```powershell
-.\exercices-incident-de-cardinaliteestaurer.ps1
+.\exercices\02-incident-de-cardinaliteestaurer.ps1
 ```
 
 ## 📦 Ce qui est fourni

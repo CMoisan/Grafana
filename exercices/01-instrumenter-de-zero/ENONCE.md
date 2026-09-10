@@ -13,15 +13,15 @@ Partir d'une application nue et arriver à un dashboard RED exploitable, sans ja
 ## 🛠️ Préparer l'environnement
 
 ```powershell
-.\exercices-instrumenter-de-zero\preparer.ps1
+.\exercices\01-instrumenter-de-zero\preparer.ps1
 ```
 
 Le script **génère** une copie dépouillée de l'API depuis la version de référence
 — il ne la duplique pas dans le dépôt, pour qu'elle ne dérive jamais. Puis :
 
 ```powershell
-minikube image build -t orders-api-nue:1.0.0 .\exercices-instrumenter-de-zeropi-nue --profile=grafana-lab
-kubectl apply -f .\exercices-instrumenter-de-zero\orders-api-nue.yaml
+minikube image build -t orders-api-nue:1.0.0 .\exercices\01-instrumenter-de-zero\api-nue --profile=grafana-lab
+kubectl apply -f .\exercices\01-instrumenter-de-zero\orders-api-nue.yaml
 ```
 
 Elle se déploie **à côté** de l'API instrumentée, sous le nom `orders-api-nue`.

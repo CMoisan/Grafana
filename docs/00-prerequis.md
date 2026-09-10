@@ -133,7 +133,7 @@ Sans client Docker sur l'hôte, la méthode habituelle
 `02-build-api.ps1` utilise donc :
 
 ```powershell
-minikube image build -t orders-api:1.0.0 .pi
+minikube image build -t orders-api:1.0.0 .\api
 ```
 
 minikube envoie le contexte de build dans la VM et construit avec le moteur qui
