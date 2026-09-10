@@ -21,15 +21,58 @@ Monter la stack complète **à la main**, commande par commande, en comprenant c
 ## ✅ Les tâches
 
 1. **Lire** `scripts/01-start-minikube.ps1` en entier, puis taper la commande `minikube start` vous-même, sans copier-coller, en justifiant chaque option (`--cpus`, `--memory`, `--driver`, `--profile`)
+
+minikube start 
+--driver=hyperv #choix du driver de virtualisation
+--cpus=4 #Nombre de cpu alloué
+--memory=8192 #memoire alloué
+--disk-size=40g #Taille disque alloué
+--kubernetes-version=v1.31.0 #Reproctubilité
+--profil=grafana-lab #1 nom par vm pour pouvoir cibler les clusters
+
 2. Créer les namespaces, et savoir dire pourquoi on sépare `observability` et `apps`
+kubectl apply -f k8s/00-base/namespace.yaml, on sépare pour soit les droit soit pour shutdown l'un des deux ou le redémarrer sans impacter l'autre
 3. Déployer **Mimir seul**. Attendre qu'il soit `Ready`. Vérifier `/ready` et interroger son API avant d'aller plus loin
+kubectl apply -f k8s/mimir
+kubectl -n observability wait --for=condition=ready pod -l app=mimir --timeout=180s
+kubectl -n observability port-forward svc/mimir 8080:9090 --address 127.0.0.1
+http://localhost:9090/prometheus/api/v1/query?query=up
+{"status":"success","data":{"resultType":"vector","result":[]}}
 4. Déployer **Loki seul**. Même vérification
-5. Se demander, avant de continuer : **pourquoi les backends avant l'agent ?** Écrire la réponse
+kubectl apply -f k8s/loki
+kubectl -n observability wait --for=condition=ready pod -l app=loki --timeout=180s
+kubectl -n observability port-forward svc/loki 3100:3100 --address 127.0.0.1
+http://localhost:3100/loki/api/v1/labels
+{"status":"success"}
+5. Se demander, avant de continuer : **pourquoi les backends avant l'agent ?** Si j'ai bien compris on fait les backend avant les agents pour que lorsqu'on verifie le signe de vie il n'y ai qu'une explication a leur absence. Le moment ou on déploie des agents avant les backends cela peut rendre flou le diagnostic on ne sait pas si ils se sont bien connecté aux backends au moment de leur test
 6. Déployer **Alloy**. Ouvrir son UI sur :12345 et constater qu'il ne trouve encore aucune cible applicative
+kubectl apply -f k8s/alloy
+kubectl -n observability wait --for=condition=ready pod -l app=alloy --timeout=180s
+kubectl -n observability port-forward svc/alloy 12345:12345 --address 127.0.0.1
+http://localhost:12345/
+Je vois le graph et je vois les pointillé entre les logs kubernetes vers les lien write.mimir et loki.write
 7. Déployer **Grafana**. ⚠️ `kubectl apply -f k8s\grafana` ne suffit PAS : le déploiement monte un objet qui n'est **pas déclaré** dans `k8s/`, parce qu'il est *généré* à partir de fichiers du dépôt. Si le pod reste en `ContainerCreating`, `kubectl describe pod` nomme précisément ce qui manque. À vous de trouver quoi, et de le créer
+kubectl apply -f k8s/grafana
+kubectl -n observability describe pod -l app=grafana
+Warning  FailedMount  1s (x4 over 4s)  kubelet            MountVolume.SetUp failed for volume "dashboards" : configmap "grafana-dashboards" not found
+kubectl -n observability create configmap grafana-dashboards --from-file=grafana/dashboards/orders-api-red.json
+kubectl -n observability rollout restart deployment/grafana
+kubectl -n observability describe pod -l app=grafana
+on est bon
+kubectl -n observability port-forward svc/grafana 3000:3000 --address 127.0.0.1
+http://localhost:3000/api/health
+Et j'arrive a me connecter au dashboard admin admin 
 8. Construire l'image de l'API et la déployer. Regarder les cibles apparaître dans Alloy **en direct**
+minikube image build -t orders-api:1.0.0 api --profile=grafana-lab
+kubectl apply -f k8s/api
+kubectl -n apps wait --for=condition=ready pod -l app=orders-api --timeout=180s
+Je ne vois pas les cibles apparaitre dans alloy http://localhost:12345/
 9. Générer du trafic à la main avec `curl`, avant même de lancer k6
+kubectl -n apps port-forward svc/orders-api 8080:8080 --address 127.0.0.1
+curl http://localhost:8080/api/orders
+Ok c bon ça 
 10. À chaque étape, noter ce que vous avez dû chercher dans la documentation
+Je me suis surtout servi de mes notes de l'ancien cours et de ma mémoire. Pour le s manquant dans grafana-dashboards je t'ai demandé et sinon j'avais oublié que le apply d'api orders était aussi dans k8s je l'ai donc fouillé dans le script
 
 ## 🔎 La méthode : comment savoir AVANT de se planter
 

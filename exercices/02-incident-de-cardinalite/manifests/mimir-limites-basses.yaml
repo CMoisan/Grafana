@@ -1,0 +1,21 @@
+# =============================================================================
+# Limites Mimir abaissees pour que l'incident survienne en MINUTES et non en
+# jours. En production ces valeurs se comptent en centaines de milliers ; ici on
+# les met assez bas pour que la plateforme reagisse pendant l'exercice.
+#
+# Ce fichier n'est PAS la cause de la panne : c'est le garde-fou qui la REVELE.
+# Sans lui, la cardinalite exploserait en silence jusqu'a l'epuisement memoire.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mimir-limites-exercice
+  namespace: observability
+data:
+  note: |
+    Ce ConfigMap sert de marqueur : la modification reelle est appliquee par
+    declencher.ps1, qui patche la cle `limits` de mimir-config.
+
+    Valeurs de l'exercice :
+      max_global_series_per_user : 3000   (au lieu de 300000)
+      ingestion_rate             : 2000   (au lieu de 100000)

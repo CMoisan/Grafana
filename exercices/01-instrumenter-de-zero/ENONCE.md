@@ -10,6 +10,37 @@ Une équipe produit vous tend une API Java qui n'expose **aucune** métrique. El
 
 Partir d'une application nue et arriver à un dashboard RED exploitable, sans jamais deviner : chaque métrique ajoutée doit répondre à une question qu'on s'est posée d'abord.
 
+## 🛠️ Préparer l'environnement
+
+```powershell
+.\exercices-instrumenter-de-zero\preparer.ps1
+```
+
+Le script **génère** une copie dépouillée de l'API depuis la version de référence
+— il ne la duplique pas dans le dépôt, pour qu'elle ne dérive jamais. Puis :
+
+```powershell
+minikube image build -t orders-api-nue:1.0.0 .\exercices-instrumenter-de-zeropi-nue --profile=grafana-lab
+kubectl apply -f .\exercices-instrumenter-de-zero\orders-api-nue.yaml
+```
+
+Elle se déploie **à côté** de l'API instrumentée, sous le nom `orders-api-nue`.
+Vous pourrez comparer les deux à tout moment — c'est même conseillé.
+
+**Ce qui a été retiré :** le registre Prometheus, `ObservabilityConfig`,
+l'adaptateur `MicrometerOrderMetrics` (remplacé par un `NoOpOrderMetrics` qui
+absorbe les appels en silence), l'exposition `/actuator/prometheus`, et les
+annotations `prometheus.io` du pod.
+
+**Ce qui a été gardé :** les logs JSON et `/actuator/health`. L'exercice porte
+sur les métriques.
+
+> [!tip] Ce que la structure vous montre déjà
+> `NoOpOrderMetrics` implémente le même port que l'adaptateur supprimé. Le
+> service, le domaine et les controllers n'ont **pas eu à changer d'une ligne**.
+> Toute l'instrumentation métier tiendra dans cette seule classe : c'est le
+> retour sur investissement de l'architecture hexagonale, rendu visible.
+
 ## 📦 Ce qui est fourni
 
 - Une copie de l'API de commandes, **dépouillée** de toute instrumentation
@@ -51,4 +82,4 @@ Que vous savez instrumenter, pas seulement lire des dashboards existants. C'est 
 
 ---
 
-> **État** : 🌱 énoncé rédigé, environnement à construire.
+> **État** : ✅ environnement prêt — `preparer.ps1` le génère à la demande.

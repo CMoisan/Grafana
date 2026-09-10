@@ -21,3 +21,9 @@ k6-results/
 #      rester public comme piece de portfolio)
 # =============================================================================
 Solutions Engineer/
+
+
+# Généré par exercices/01-instrumenter-de-zero/preparer.ps1 — ne pas versionner,
+# c'est une copie dérivée de api/ qui divergerait immanquablement.
+exercices/01-instrumenter-de-zero/api-nue/
+exercices/01-instrumenter-de-zero/orders-api-nue.yaml

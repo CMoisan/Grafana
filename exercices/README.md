@@ -101,9 +101,9 @@ qui n'était pas dans la boucle.
 
 - [x] Les 12 énoncés rédigés
 - [ ] 00 — *aucun environnement à construire : le lab de référence suffit*
-- [ ] 01 — environnement à construire (API dépouillée)
-- [ ] 02 — environnement à construire (API à cardinalité explosive)
-- [ ] 03 — environnement à construire (deux namespaces, deux tenants)
+- [x] 01 — ✅ `preparer.ps1` génère l'API dépouillée à la demande
+- [x] 02 — ✅ `declencher.ps1` provoque l'incident, `restaurer.ps1` remet d'aplomb
+- [x] 03 — *rien à construire : tout ce qu'il demande existe déjà*
 - [ ] 04 — environnement à construire (Prometheus existant)
 - [ ] 05 — environnement à construire (app à logs texte)
 - [ ] 06 — environnement à construire (stack volontairement mal réglée)

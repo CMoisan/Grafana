@@ -10,6 +10,29 @@ Il est 9 h. Les dashboards sont vides depuis cette nuit. Mimir renvoie des 429, 
 
 Retrouver la cause en partant des symptômes, la corriger, et poser un garde-fou pour que ça ne se reproduise pas. Puis savoir raconter l'incident en trois minutes.
 
+## 🛠️ Déclencher l'incident
+
+```powershell
+.\exercices-incident-de-cardinalite\declencher.ps1
+```
+
+> [!danger] Ne lisez PAS le dossier `manifests\` avant d'avoir diagnostiqué
+> Il contient la cause. Tout l'intérêt est de la retrouver **par les symptômes**,
+> comme un matin où une équipe produit a déployé la veille au soir.
+>
+> Si vous êtes bloqué plus de 45 minutes, allez le lire. Mais essayez d'abord —
+> et notez que vous l'avez ouvert, ça fait partie du bilan.
+
+Le script abaisse les limites de Mimir pour que l'incident survienne en minutes,
+redéploie l'API avec une modification, puis génère du trafic. Comptez **5 à
+8 minutes** avant que la dégradation soit franche.
+
+Pour tout remettre d'aplomb ensuite :
+
+```powershell
+.\exercices-incident-de-cardinaliteestaurer.ps1
+```
+
 ## 📦 Ce qui est fourni
 
 - Une version de l'API qui met l'**identifiant de commande** en label Prometheus
@@ -51,4 +74,4 @@ C'est **l'exercice le plus rentable de tous** pour l'entretien. La cardinalité 
 
 ---
 
-> **État** : 🌱 énoncé rédigé, environnement à construire.
+> **État** : ✅ environnement prêt — `declencher.ps1` provoque l'incident.

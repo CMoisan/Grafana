@@ -1,0 +1,23 @@
+# =============================================================================
+# NE LISEZ PAS CE FICHIER AVANT D'AVOIR DIAGNOSTIQUE.
+# =============================================================================
+# Il contient la cause de la panne. Tout l'interet de l'exercice est de la
+# retrouver par les symptomes — dashboards vides, 429 cote Mimir, file d'attente
+# qui gonfle cote Alloy — exactement comme un matin ou une equipe produit a
+# deploye la veille au soir.
+#
+# Si vous etes bloque plus de 45 minutes, revenez le lire. Mais essayez d'abord.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: apps
+spec:
+  template:
+    spec:
+      containers:
+        - name: orders-api
+          env:
+            - name: ORDERS_HIGH_CARDINALITY
+              value: "true"

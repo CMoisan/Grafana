@@ -41,6 +41,24 @@ public class MicrometerOrderMetrics implements OrderMetrics {
 
     private final MeterRegistry registry;
 
+    /**
+     * ========================================================================
+     * ECHAFAUDAGE DE L'EXERCICE 02 — a laisser sur false en temps normal.
+     * ========================================================================
+     * Pilote par la variable d'environnement ORDERS_HIGH_CARDINALITY.
+     *
+     * Quand elle vaut true, chaque commande creee emet un compteur portant un
+     * identifiant UNIQUE en label. C'est la simulation fidele de l'erreur la
+     * plus courante en production : un developpeur ajoute « juste un label pour
+     * tracer » et fait exploser le nombre de series.
+     *
+     * Aucun message, aucune erreur, aucun avertissement. Ca marche tres bien
+     * en developpement avec dix commandes — et ca met la plateforme a genoux
+     * en production. C'est exactement ce qui rend ce piege si frequent.
+     */
+    private final boolean hauteCardinalite =
+            Boolean.parseBoolean(System.getenv().getOrDefault("ORDERS_HIGH_CARDINALITY", "false"));
+
     // On pre-cree les meters sans label variable : c'est plus rapide (pas de
     // lookup dans une map a chaque appel) et ca documente la liste des metriques.
     private final Counter ordersCreated;
@@ -87,6 +105,12 @@ public class MicrometerOrderMetrics implements OrderMetrics {
         ordersCreated.increment();
         basketItems.record(itemCount);
         basketAmount.record(amount.doubleValue());
+
+        if (hauteCardinalite) {
+            // UNE SERIE TEMPORELLE PAR COMMANDE. Ne jamais faire ca.
+            registry.counter("orders.created.detailed",
+                    "order_id", java.util.UUID.randomUUID().toString()).increment();
+        }
     }
 
     @Override
