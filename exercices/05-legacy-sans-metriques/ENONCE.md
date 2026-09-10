@@ -10,6 +10,29 @@ Le client a une application métier critique écrite il y a douze ans. Personne 
 
 Produire un dashboard RED complet et une alerte fonctionnelle **sans modifier une seule ligne** de l'application.
 
+## 🛠️ Préparer l'environnement
+
+```powershell
+kubectl apply -f .\exercices05-legacy-sans-metriques\manifests\facturation-legacy.yaml
+kubectl -n apps logs -l app=facturation-legacy --tail=20
+```
+
+Un service de facturation écrit il y a douze ans. **Aucun endpoint de
+métriques**, aucune annotation `prometheus.io`, et des logs dans un format
+maison :
+
+```
+10/09/2026 17:18:41 [ERREUR] FACTURATION req=12 route=/facture/consulter statut=500 duree=25ms user=u159
+```
+
+Trois pièges volontaires, tous réalistes :
+- le format n'est **ni JSON, ni logfmt, ni Apache** — il faudra un `pattern` ou
+  une `regexp`
+- des **lignes parasites** sans route ni durée (`purge du cache terminee`) qui
+  doivent être ignorées sans casser le parsing
+- un taux d'erreur **qui varie par vagues**, pas constant — de quoi produire un
+  graphe qui ressemble à quelque chose
+
 ## 📦 Ce qui est fourni
 
 - Une application qui n'expose aucun endpoint de métriques
@@ -49,4 +72,4 @@ C'est la réponse à l'objection la plus fréquente en avant-vente : « on ne pe
 
 ---
 
-> **État** : 🌱 énoncé rédigé, environnement à construire.
+> **État** : ✅ environnement prêt.

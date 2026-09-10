@@ -6,7 +6,7 @@
 # `kubectl port-forward` choisit UN pod au moment ou on le lance, et s'arrete
 # des que ce pod disparait. Or dans un lab on redemarre des pods en permanence :
 # un `rollout restart`, un correctif de ConfigMap, un OOMKill, et le tunnel
-# meurt SILENCIEUSEMENT. On croit alors que le composant est cassé alors que
+# meurt SILENCIEUSEMENT. On croit alors que le composant est casse alors que
 # seul le tunnel l'est.
 #
 # Ce script relance donc automatiquement tout tunnel tombe, et affiche leur
@@ -16,7 +16,7 @@
 # LES 3 FACONS D'ATTEINDRE UN SERVICE, a savoir distinguer :
 #   1. NodePort + `minikube service` : minikube ouvre un tunnel et le navigateur
 #   2. `kubectl port-forward` : tunnel vers UN pod. Marche partout, meme a
-#      distance. C'est l'outil de debug universel — et c'est celui qui casse
+#      distance. C'est l'outil de debug universel - et c'est celui qui casse
 #      quand le pod redemarre.
 #   3. Ingress + `minikube tunnel` : le plus proche de la production.
 # =============================================================================

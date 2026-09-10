@@ -25,7 +25,7 @@ $src    = Join-Path $racine "api"
 $dst    = Join-Path $PSScriptRoot "api-nue"
 
 # PowerShell 5.1 ecrit de l'UTF-8 AVEC BOM via Set-Content -Encoding UTF8.
-# javac refuse ce BOM ("illegal character: ﻿"). On ecrit donc en UTF-8 nu.
+# javac refuse ce BOM ("illegal character: "). On ecrit donc en UTF-8 nu.
 function Write-Utf8NoBom([string]$Chemin, [string]$Contenu) {
   [System.IO.File]::WriteAllText($Chemin, $Contenu, (New-Object System.Text.UTF8Encoding $false))
 }

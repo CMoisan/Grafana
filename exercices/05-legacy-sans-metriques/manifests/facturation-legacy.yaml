@@ -1,0 +1,96 @@
+# =============================================================================
+# L'APPLICATION LEGACY — celle dont on vous dit « on ne peut rien faire »
+# =============================================================================
+# Un service de facturation ecrit il y a douze ans. L'equipe qui l'a ecrit est
+# partie. Il n'expose AUCUN endpoint de metriques, et ses logs sont en texte
+# libre, dans un format maison.
+#
+# Volontairement realiste :
+#   - format de log non standard (ni JSON, ni Apache, ni logfmt)
+#   - latences a distribution log-normale, avec une vraie traine
+#   - taux d'erreur variable dans le temps, pas constant
+#   - quelques lignes parasites qui ne correspondent a aucune requete
+#
+# Aucune image a construire : tout tient dans un script shell.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: facturation-legacy-script
+  namespace: apps
+data:
+  simuler.sh: |
+    #!/bin/sh
+    # Simulateur de trafic d'un service de facturation historique.
+    ROUTES="/facture/emettre /facture/annuler /facture/consulter /client/solde"
+    i=0
+    while true; do
+      i=$((i + 1))
+      route=$(echo $ROUTES | tr ' ' '\n' | sed -n "$(( (RANDOM % 4) + 1 ))p")
+
+      # Latence log-normale grossiere : mediane basse, longue traine
+      base=$(( (RANDOM % 40) + 8 ))
+      if [ $((RANDOM % 20)) -eq 0 ]; then base=$((base * 12)); fi
+      if [ $((RANDOM % 100)) -eq 0 ]; then base=$((base * 40)); fi
+
+      # Taux d'erreur qui varie par vagues, comme un vrai service
+      seuil=3
+      if [ $(( (i / 200) % 5 )) -eq 0 ]; then seuil=18; fi
+      r=$((RANDOM % 100))
+      if   [ $r -lt $seuil ];       then code=500; niveau=ERREUR
+      elif [ $r -lt $((seuil + 6)) ]; then code=404; niveau=AVERT
+      else                               code=200; niveau=INFO
+      fi
+
+      horodatage=$(date '+%d/%m/%Y %H:%M:%S')
+      echo "$horodatage [$niveau] FACTURATION req=$i route=$route statut=$code duree=${base}ms user=u$((RANDOM % 500))"
+
+      # Lignes parasites : ni requete, ni statut, ni duree.
+      # Elles doivent etre ignorees par le parsing — c'est le piege.
+      if [ $((RANDOM % 40)) -eq 0 ]; then
+        echo "$horodatage [INFO] FACTURATION purge du cache terminee"
+      fi
+      if [ $((RANDOM % 150)) -eq 0 ]; then
+        echo "$horodatage [ERREUR] FACTURATION connexion base perdue, reconnexion"
+      fi
+      sleep 0.3
+    done
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: facturation-legacy
+  namespace: apps
+spec:
+  ports: [{ name: http, port: 8080, targetPort: 8080 }]
+  selector: { app: facturation-legacy }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: facturation-legacy
+  namespace: apps
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: facturation-legacy } }
+  template:
+    metadata:
+      labels:
+        app: facturation-legacy
+      # AUCUNE annotation prometheus.io : il n'y a rien a scraper.
+      # C'est tout le probleme de l'exercice.
+    spec:
+      containers:
+        - name: facturation
+          image: busybox:1.36
+          command: ["/bin/sh", "/opt/simuler.sh"]
+          resources:
+            requests: { cpu: 20m,  memory: 32Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
+          volumeMounts:
+            - { name: script, mountPath: /opt }
+      volumes:
+        - name: script
+          configMap:
+            name: facturation-legacy-script
+            defaultMode: 0755

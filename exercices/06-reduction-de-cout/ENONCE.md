@@ -10,6 +10,34 @@ Reprise du brief *Vertuoz* de [[MEDDPICC - session pratique Grafana]] : 470 k€
 
 Partir d'une plateforme volontairement mal configurée, mesurer, réduire, et produire un chiffre défendable devant un directeur financier.
 
+## 🛠️ Préparer l'environnement
+
+Le lab de référence est **déjà optimisé** — liste blanche cAdvisor, buckets JVM
+filtrés, logs en INFO. C'est précisément ce qui empêche de faire l'exercice.
+
+```powershell
+.\exercices06-reduction-de-cout\degrader.ps1
+```
+
+Il défait ces optimisations pour vous placer devant une plateforme telle qu'on la
+trouve chez un client qui n'a jamais regardé sa facture. **Lisez-le si vous
+voulez** : savoir *quoi* couper ne gâche rien. La difficulté est de **mesurer,
+couper dans le bon ordre, et prouver que rien n'a cassé**.
+
+Puis, avant de toucher à quoi que ce soit :
+
+```powershell
+.\exercices06-reduction-de-cout\mesurer.ps1 -Etiquette "avant"
+```
+
+L'outil compte les séries actives par famille, le débit d'ingestion et le volume
+de logs, **consigne tout dans `mesures.csv`**, et projette le résultat à ×100 et
+×1000 — parce que c'est ce raisonnement qui parle à un directeur financier, pas
+le chiffre brut de votre lab.
+
+Relancez-le après **chaque** levier, avec une étiquette différente. Le tableau
+avant/après se construit tout seul.
+
 ## 📦 Ce qui est fourni
 
 - Une stack configurée « comme chez un vrai client » : cAdvisor complet, tous les buckets JVM, logs DEBUG en production, aucun filtrage
@@ -49,4 +77,4 @@ C'est le `M` de MEDDPICC : le SE est celui qui **produit** le chiffre qui justif
 
 ---
 
-> **État** : 🌱 énoncé rédigé, environnement à construire.
+> **État** : ✅ environnement prêt.

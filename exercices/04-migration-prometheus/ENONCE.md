@@ -10,6 +10,22 @@ Le client a un Prometheus qui tourne depuis trois ans. 400 dashboards, 120 règl
 
 Démontrer une migration **sans rupture** : les dashboards continuent de fonctionner, les alertes aussi, et on peut revenir en arrière à tout moment.
 
+## 🛠️ Préparer l'environnement
+
+```powershell
+kubectl apply -f .\exercices04-migration-prometheus\manifests\prometheus.yaml
+kubectl -n apps rollout status deployment/prometheus
+kubectl -n apps port-forward svc/prometheus 9090:9090
+```
+
+Un Prometheus « historique » se déploie à côté de la stack : il scrape déjà
+l'API, avec ses propres *recording rules* et une alerte héritée. Son
+`external_label` vaut `source: prometheus-legacy` — c'est **lui qui vous
+permettra de comparer** les deux sources pendant la double écriture.
+
+Interface sur `localhost:9090`. Regardez ses *Targets* et ses *Rules* avant de
+toucher à quoi que ce soit : c'est l'existant du client.
+
 ## 📦 Ce qui est fourni
 
 - Un Prometheus déployé, scrapant l'API, avec ses propres règles et dashboards
@@ -49,4 +65,4 @@ Que vous savez conduire un changement chez un client qui a un existant, ce qui e
 
 ---
 
-> **État** : 🌱 énoncé rédigé, environnement à construire.
+> **État** : ✅ environnement prêt.

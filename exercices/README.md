@@ -99,14 +99,15 @@ qui n'était pas dans la boucle.
 
 ## État d'avancement
 
-- [x] Les 12 énoncés rédigés
+- [x] Les 13 énoncés rédigés
+- [x] **Les 13 environnements sont prêts**
 - [ ] 00 — *aucun environnement à construire : le lab de référence suffit*
 - [x] 01 — ✅ `preparer.ps1` génère l'API dépouillée à la demande
 - [x] 02 — ✅ `declencher.ps1` provoque l'incident, `restaurer.ps1` remet d'aplomb
 - [x] 03 — *rien à construire : tout ce qu'il demande existe déjà*
-- [ ] 04 — environnement à construire (Prometheus existant)
-- [ ] 05 — environnement à construire (app à logs texte)
-- [ ] 06 — environnement à construire (stack volontairement mal réglée)
+- [x] 04 — ✅ un Prometheus « historique » à déployer, avec ses règles héritées
+- [x] 05 — ✅ un service de facturation legacy, logs en format maison
+- [x] 06 — ✅ `degrader.ps1` dés-optimise, `mesurer.ps1` chiffre, `restaurer.ps1` remet
 - [ ] 07 — *le brief suffit, l'environnement est le lab de référence*
 - [ ] 08 — manifestes Tempo à écrire **par vous**, c'est l'exercice
 - [ ] 09 — manifestes Pyroscope à écrire **par vous**, c'est l'exercice

@@ -5,7 +5,12 @@
 # Restaure les limites Mimir d'origine, retire la variable fautive, et
 # reconstruit l'image saine.
 # =============================================================================
-$ErrorActionPreference = "Stop"
+# PIEGE POWERSHELL 5.1 : avec ErrorActionPreference a "Stop", la moindre ligne
+# ecrite sur stderr par un executable natif (kubectl ecrit ses AVERTISSEMENTS
+# la-dessus) devient une erreur fatale et interrompt le script, alors que la
+# commande a parfaitement reussi. On reste donc en Continue, et on verifie
+# explicitement $LASTEXITCODE la ou ca compte.
+$ErrorActionPreference = "Continue"
 $racine = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 Write-Host "=== 1/3 Limites Mimir d'origine ===" -ForegroundColor Cyan

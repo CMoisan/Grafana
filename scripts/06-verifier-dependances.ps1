@@ -4,12 +4,12 @@
 # LE PROBLEME QU'IL RESOUT
 #   Un Deployment MONTE une ConfigMap ou un Secret sans forcement les CREER.
 #   Si l'objet n'existe pas, le pod reste bloque en ContainerCreating,
-#   INDEFINIMENT et SANS AUCUN LOG — puisque le conteneur n'a jamais demarre.
+#   INDEFINIMENT et SANS AUCUN LOG - puisque le conteneur n'a jamais demarre.
 #   `kubectl logs` ne renvoie rien, ce qui est tres deroutant la premiere fois.
 #
 # QUAND S'EN SERVIR
 #   Avant tout deploiement sur un environnement neuf, et surtout quand on
-#   reprend les manifestes de quelqu'un d'autre — c'est-a-dire tout le temps,
+#   reprend les manifestes de quelqu'un d'autre - c'est-a-dire tout le temps,
 #   chez un client.
 #
 # LIMITE ASSUMEE

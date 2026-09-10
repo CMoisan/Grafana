@@ -1,0 +1,133 @@
+# =============================================================================
+# UN PROMETHEUS "HISTORIQUE" — le point de depart de la migration
+# =============================================================================
+# Il represente l'existant du client : il tourne depuis des annees, il scrape,
+# il a ses propres regles, et personne n'a envie d'y toucher.
+#
+# Votre travail n'est PAS de le remplacer d'un coup. C'est de faire cohabiter
+# les deux, de prouver l'equivalence, puis de debrancher — avec un retour
+# arriere possible a chaque etape.
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: prometheus, namespace: apps }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: prometheus, namespace: apps }
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: prometheus, namespace: apps }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: prometheus }
+subjects:
+  - { kind: ServiceAccount, name: prometheus, namespace: apps }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: prometheus-config, namespace: apps }
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      external_labels:
+        # Ce label distinguera les series venues d'ici de celles venues d'Alloy
+        # pendant la phase de double ecriture. Indispensable pour comparer.
+        source: prometheus-legacy
+
+    rule_files:
+      - /etc/prometheus/rules.yml
+
+    scrape_configs:
+      - job_name: orders-api
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces: { names: [apps] }
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            regex: "true"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            regex: "(.+)"
+            target_label: __metrics_path__
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            separator: ";"
+            regex: "([^:]+)(?::\d+)?;(\d+)"
+            replacement: "$1:$2"
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+
+  rules.yml: |
+    # Les regles que le client a ecrites au fil des ans. Elles devront
+    # fonctionner a l'identique apres migration : c'est un critere de reussite.
+    groups:
+      - name: orders-api-legacy
+        interval: 30s
+        rules:
+          - record: legacy:http_requests:rate5m
+            expr: sum by (app) (rate(http_server_requests_seconds_count[5m]))
+          - record: legacy:http_errors:rate5m
+            expr: sum by (app) (rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+          - alert: LegacyHighErrorRate
+            expr: |
+              (legacy:http_errors:rate5m / legacy:http_requests:rate5m) > 0.05
+            for: 2m
+            labels: { severity: critical, origine: prometheus-legacy }
+            annotations:
+              summary: "Taux d'erreur > 5% (regle heritee)"
+---
+apiVersion: v1
+kind: Service
+metadata: { name: prometheus, namespace: apps }
+spec:
+  ports: [{ name: http, port: 9090, targetPort: 9090 }]
+  selector: { app: prometheus }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: apps
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: prometheus } }
+  template:
+    metadata:
+      labels: { app: prometheus }
+    spec:
+      serviceAccountName: prometheus
+      securityContext: { fsGroup: 65534, runAsUser: 65534, runAsNonRoot: true }
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.1.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=6h
+            # Necessaire pour recharger la config sans redemarrer :
+            # curl -XPOST http://localhost:9090/-/reload
+            - --web.enable-lifecycle
+          ports: [{ name: http, containerPort: 9090 }]
+          readinessProbe:
+            httpGet: { path: /-/ready, port: http }
+            initialDelaySeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: "1",  memory: 1Gi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/prometheus }
+            - { name: data,   mountPath: /prometheus }
+      volumes:
+        - name: config
+          configMap: { name: prometheus-config }
+        - name: data
+          emptyDir: {}
