@@ -133,7 +133,7 @@ docs/                   le cours : parcours, PromQL, LogQL, SLO, entretien
 ## Les exercices
 
 Le lab ci-dessus est l'**environnement de référence** : complet et sain.
-Le dossier [exercices/](exercices/) contient douze environnements qui le dégradent,
+Le dossier [exercices/](exercices/) contient treize environnements qui le dégradent,
 l'étendent ou le mettent en situation — chacun avec son énoncé et ses critères de
 réussite vérifiables.
 
@@ -155,6 +155,7 @@ réussite vérifiables.
 | 09 | [⭐ Pyroscope](exercices/09-pyroscope-le-quatrieme-pilier/ENONCE.md) | 3–4 h |
 | 10 | [⭐⭐ Passage à l'échelle](exercices/10-passage-a-l-echelle/ENONCE.md) | 1–2 j |
 | 11 | [⭐⭐⭐ Cloud vs self-hosted](exercices/11-grafana-cloud-vs-self-hosted/ENONCE.md) | 4–6 h |
+| 12 | [⭐⭐⭐ Beyla, sans toucher au code](exercices/12-beyla-instrumenter-sans-code/ENONCE.md) | 4–6 h |
 
 → [exercices/README.md](exercices/README.md) pour l'ordre conseillé.
 

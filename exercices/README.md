@@ -43,6 +43,7 @@ il **remplace** les scripts, il ne les complète pas.
 |---|---|---|---|
 | [08](08-tempo-les-trois-piliers/ENONCE.md) | ⭐⭐ Tempo, les traces | 4–6 h | Corrélation logs↔traces, exemplars |
 | [09](09-pyroscope-le-quatrieme-pilier/ENONCE.md) | ⭐ Pyroscope | 3–4 h | Flame graph, surcoût mesuré |
+| [12](12-beyla-instrumenter-sans-code/ENONCE.md) | ⭐⭐⭐ **Beyla, sans toucher au code** | 4–6 h | eBPF, et surtout l'arbitrage à présenter |
 
 ### Le métier
 | # | Exercice | Durée | Ce que ça travaille |
@@ -52,16 +53,16 @@ il **remplace** les scripts, il ne les complète pas.
 | [11](11-grafana-cloud-vs-self-hosted/ENONCE.md) | ⭐⭐⭐ Cloud vs self-hosted | 4–6 h | L'arbitrage, la conversation qui décide |
 | [07](07-discovery-et-demo/ENONCE.md) | ⭐⭐⭐ Discovery et démo | 1 j ×3 | Qualifier, cadrer, démontrer |
 
-**Total : 8 à 12 jours de travail effectif.**
+**Total : 9 à 13 jours de travail effectif.**
 
 ---
 
 ## Dans quel ordre
 
 **Le parcours complet, dans l'ordre pédagogique :**
-`00 → 01 → 02 → 03 → 04 → 05 → 08 → 09 → 06 → 10 → 11 → 07`
+`00 → 01 → 02 → 03 → 04 → 05 → 08 → 09 → 12 → 06 → 10 → 11 → 07`
 
-**Si vous n'avez qu'une semaine** : `00 → 02 → 03 → 08 → 06 → 07`.
+**Si vous n'avez qu'une semaine** : `00 → 02 → 03 → 08 → 12 → 07`.
 Le 00 vous rend autonome, le 08 donne la démo la plus marquante, le 06 et le 07
 donnent le langage du métier.
 
@@ -111,7 +112,8 @@ qui n'était pas dans la boucle.
 - [ ] 09 — manifestes Pyroscope à écrire **par vous**, c'est l'exercice
 - [ ] 10 — manifestes distribués à écrire **par vous**, c'est l'exercice
 - [ ] 11 — *aucun environnement : un compte Grafana Cloud gratuit*
+- [ ] 12 — manifestes Beyla à écrire **par vous**, c'est l'exercice
 
-> Les exercices 00, 07, 08, 09, 10 et 11 sont **faisables immédiatement** :
+> Les exercices 00, 07, 08, 09, 10, 11 et 12 sont **faisables immédiatement** :
 > ils demandent d'écrire ou de raisonner, pas de disposer d'un environnement
 > préparé. Les autres attendent que leur variante du lab soit construite.
