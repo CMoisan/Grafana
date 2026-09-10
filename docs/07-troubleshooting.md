@@ -239,6 +239,26 @@ chaque redémarrage de Windows**. Conséquence : le cluster démarre parfaitemen
 premier jour, et le lendemain `minikube start` échoue ou reste bloqué, parce que
 minikube a mémorisé une IP qui n'existe plus.
 
+> [!] **Cas réellement rencontré le 2026-09-10**
+> ```
+> IP mémorisée par minikube    192.168.162.239   (~/.minikube/profiles/<profil>/config.json)
+> Default Switch après reboot  172.19.64.1/20
+> kubeconfig                   https://192.168.162.239:8443
+> ```
+> Deux sous-réseaux sans rapport. La VM est injoignable et ne sort plus sur
+> Internet. Messages associés :
+> ```
+> ! Échec de la connexion à https://registry.k8s.io/ depuis l'intérieur du minikube VM
+> ! Impossible de redémarrer le(s) nœud(s) du plan de contrôle, le cluster sera réinitialisé
+> ```
+>
+> **Le diagnostic en deux commandes**, avant de supprimer quoi que ce soit :
+> ```powershell
+> (Get-Content "$env:USERPROFILE\.minikube\profiles\grafana-lab\config.json" | ConvertFrom-Json).Nodes[0].IP
+> Get-NetIPAddress -AddressFamily IPv4 | Where-Object InterfaceAlias -match "Default Switch"
+> ```
+> Si les deux ne sont pas dans le même sous-réseau, c'est ça.
+
 **Symptômes** : `minikube start` qui tourne indéfiniment, ou
 `Unable to connect to the server: dial tcp ... i/o timeout` sur toute commande
 `kubectl`.
