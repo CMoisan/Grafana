@@ -113,8 +113,8 @@ C'est l'exercice qui vous rend **autonome devant un client**. En démo, personne
 
 ---
 
-> **État** : réalisé une fois le 2026-09-05 (12,5/20).
-> Objectif du prochain passage : **moins de 45 minutes**, doc officielle d'abord.
+> **État** : réalisé deux fois — 2026-09-05 (12,5/20), 2026-09-10 (14/20, 33 min).
+> Objectif du prochain passage : **moins de 25 minutes**, et **lire les Events avant de demander de l'aide**.
 > L'historique complet est en bas de ce fichier — **à ne pas relire avant d'avoir refait l'exercice**.
 ---
 ---
@@ -331,11 +331,96 @@ recours**. L'ordre a été inversé.
 
 ---
 
-## Passage 2 — *à venir*
+## Passage 2 — jeudi 10 septembre 2026 · **14 / 20**
+
+| Axe | Note | Constat |
+|---|---|---|
+| **Exécution** | 17/20 | **33 min**, sous l'objectif de 45. Ordre de déploiement respecté sans hésiter. Et récupération d'une panne d'infrastructure réelle avant même de commencer |
+| **Compréhension** | 13/20 | Nette progression : le sens des flux, le rôle d'Alloy, RED, OTel sont acquis — questions posées à l'appui |
+| **Autonomie de diagnostic** | 8/20 | ⚠️ **La leçon du passage 1 n'a pas transféré.** Les Events n'ont toujours pas été lus |
+
+### ⏱️ La chronologie réelle
+
+```
+15:51:10   namespaces
+15:51:22   mimir            +12 s
+15:57:49   loki             +6 min 39
+16:01:15   alloy            +3 min 26
+16:05:06   grafana          +3 min 51
+16:08:07   grafana-dashboard   ← le SINGULIER, erreur
+16:15:43   grafana-dashbordS   ← corrigé, 7 min 36 perdues
+16:24:19   orders-api       +8 min 36
+───────────────────────────────────────
+           33 min 09 au total
+```
+
+> **Le critère « moins de 45 minutes » est atteint.** Et il l'est *malgré* 7 min 36
+> perdues sur une faute de frappe — soit **23 % du temps total**. Sans elle, 25 minutes.
+>
+> Ce chrono ne compte pas la remise en route du cluster (Default Switch), qui a
+> précédé. C'est normal : ce n'est pas ce que l'exercice mesure.
+
+### 🔴 Les erreurs du passage 2
+
+**1. `grafana-dashboard` au lieu de `grafana-dashboards`** — 7 min 36 de blocage.
+Kubernetes ne fait aucun rapprochement approximatif : le nom monté doit
+correspondre au caractère près.
+
+**2. ⚠️ Les Events n'ont TOUJOURS pas été lus.** C'est la même erreur qu'au
+passage 1, et c'est la plus coûteuse. Le `describe` a même été copié en entier —
+mais **en s'arrêtant juste avant la section `Events:`**, qui disait mot pour mot :
+```
+MountVolume.SetUp failed for volume "dashboards" :
+configmap "grafana-dashboards" not found
+```
+> Le haut du `describe` décrit ce que le pod **devrait** être.
+> Le bas dit ce qui **se passe**. C'est le bas qui répond.
+
+**3. `sudo systemctl restart containerd` tapé dans PowerShell.** Ces commandes
+s'exécutent **dans la VM**, pas sur Windows — `minikube ssh` d'abord. Révèle un
+modèle mental à corriger : la VM minikube est une machine Linux distincte. Et
+trahit une suggestion appliquée sans vérifier où elle s'exécute.
+
+**4. `kubectl apply` sans `-f`.** `apply` part toujours d'un fichier, annoncé par
+un flag. Le passage 1 l'avait pourtant fait correctement — vérifiable dans cette
+archive même.
+
+**5. `--profil` et `--kubernetes-version` sans valeur.** Le flag sans valeur a
+avalé le suivant, d'où l'erreur trompeuse *« Impossible d'analyser la version
+--profil=grafana-lab »*. Trois tentatives pour corriger.
+
+### 🟢 Ce qui a nettement progressé
+
+- **L'ordre de déploiement est intégré.** Mimir 12 secondes après les namespaces,
+  puis chaque composant vérifié avant le suivant. Plus aucune hésitation.
+- **Une vraie panne d'infra encaissée** : le Default Switch d'Hyper-V régénère son
+  sous-réseau NAT au redémarrage de Windows. VM injoignable, cluster à recréer.
+  → documenté dans `docs/07-troubleshooting.md`
+- **Les concepts sont là** : sens des flux, rôle d'Alloy comme unique collecteur,
+  RED comme méthode de sélection et non de mise en page, OTel et le déplacement
+  de pouvoir qu'il opère.
+
+### 🎯 L'unique objectif du passage 3
+
+> **Lire les Events AVANT de demander de l'aide.** Une seule règle.
+
+Deux commandes à mettre en raccourci, pour ne plus jamais scroller :
+```powershell
+kubectl -n <ns> describe pod -l app=<X> | Select-String "Events:" -Context 0,10
+kubectl -n <ns> get events --sort-by=.lastTimestamp | Select-Object -Last 10
+```
+
+Objectif chiffré : **moins de 25 minutes**, et **zéro question posée** avant
+d'avoir lu les Events.
+
+---
+
+## Passage 3 — *à venir*
 
 | | |
 |---|---|
 | Date | |
-| Durée | |
+| Durée | *cible : < 25 min* |
 | Note | |
+| Events lus avant de demander de l'aide ? | |
 | Mes 3 erreurs | |
