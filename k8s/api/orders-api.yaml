@@ -74,8 +74,11 @@ spec:
             - name: POD_NAME
               valueFrom:
                 fieldRef: { fieldPath: metadata.name }
-            # Prepare l'envoi de traces vers Alloy (OTLP). Actif des que vous
-            # ajouterez Tempo : l'appli pousse deja, il ne manque que le stockage.
+            # ATTENTION : ces variables sont posees mais INUTILISEES aujourd'hui.
+            # micrometer-tracing-bridge-otel cree bien des spans et alimente le MDC
+            # (d'ou le traceId dans les logs), mais SANS la dependance
+            # opentelemetry-exporter-otlp il n'exporte RIEN. Ajouter cet exportateur
+            # au pom fait partie de l'exercice 08.
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://alloy.observability.svc.cluster.local:4318"
             - { name: OTEL_SERVICE_NAME, value: "orders-api" }

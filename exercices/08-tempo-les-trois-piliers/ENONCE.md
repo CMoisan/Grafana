@@ -15,7 +15,7 @@ Déployer Tempo, brancher le pipeline de traces dans Alloy, et rendre vivante la
 ## 📦 Ce qui est fourni
 
 - Alloy avec son récepteur OTLP déjà configuré
-- L'application qui envoie déjà ses traces (`OTEL_EXPORTER_OTLP_ENDPOINT`)
+- L'application qui **génère** des spans et un traceId (visible dans les logs), mais qui **n'exporte rien** : la dépendance `opentelemetry-exporter-otlp` manque au `pom.xml`. L'ajouter fait partie de l'exercice
 - Les `derivedFields` Loki et les `exemplarTraceIdDestinations` Mimir déjà écrits
 - **Aucun manifeste Tempo** — c'est l'exercice
 
