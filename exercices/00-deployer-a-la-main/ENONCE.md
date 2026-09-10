@@ -113,8 +113,8 @@ C'est l'exercice qui vous rend **autonome devant un client**. En démo, personne
 
 ---
 
-> **État** : réalisé deux fois — 2026-09-05 (12,5/20), 2026-09-10 (14/20, 33 min).
-> Objectif du prochain passage : **moins de 25 minutes**, et **lire les Events avant de demander de l'aide**.
+> **État** : réalisé deux fois — 2026-09-05 (12,5/20), 2026-09-10 (15/20, 33 min).
+> Objectif du prochain passage : **moins de 25 minutes**, en **commentant à voix haute**.
 > L'historique complet est en bas de ce fichier — **à ne pas relire avant d'avoir refait l'exercice**.
 ---
 ---
@@ -331,13 +331,25 @@ recours**. L'ordre a été inversé.
 
 ---
 
-## Passage 2 — jeudi 10 septembre 2026 · **14 / 20**
+## Passage 2 — jeudi 10 septembre 2026 · **15 / 20**
 
 | Axe | Note | Constat |
 |---|---|---|
-| **Exécution** | 17/20 | **33 min**, sous l'objectif de 45. Ordre de déploiement respecté sans hésiter. Et récupération d'une panne d'infrastructure réelle avant même de commencer |
-| **Compréhension** | 13/20 | Nette progression : le sens des flux, le rôle d'Alloy, RED, OTel sont acquis — questions posées à l'appui |
-| **Autonomie de diagnostic** | 8/20 | ⚠️ **La leçon du passage 1 n'a pas transféré.** Les Events n'ont toujours pas été lus |
+| **Exécution** | 17/20 | **33 min**, sous l'objectif de 45. Ordre de déploiement enchaîné sans hésiter, et une panne d'infrastructure réelle encaissée avant même de commencer |
+| **Compréhension** | 14/20 | Sens des flux, rôle d'Alloy, RED comme méthode, OTel et le déplacement de pouvoir : acquis |
+| **Autonomie de diagnostic** | 14/20 | Events lus, ConfigMap manquante identifiée seule. Bloqué ensuite sur une faute de frappe, ce qui est le plus difficile à voir |
+
+### ✅ Critères de réussite
+
+- [x] La stack tourne, et **aucun script n'a été exécuté**
+- [x] Je sais expliquer l'ordre de déploiement et ce qui casse si on l'inverse
+- [x] J'ai une liste écrite des endroits où je me suis trompé *(ci-dessous)*
+- [x] Je sais dire, pour chaque composant, quelle commande prouve qu'il fonctionne
+- [x] **Refait une deuxième fois, je tiens en moins de 45 minutes** — 33 min 09
+- [ ] Je peux commenter à voix haute pendant que ça se déploie, sans lire de notes
+
+> La dernière n'est pas cochée parce qu'elle n'a pas été testée, pas parce qu'elle
+> a échoué. C'est l'exercice du passage 3 : commenter à voix haute, en s'enregistrant.
 
 ### ⏱️ La chronologie réelle
 
@@ -347,45 +359,42 @@ recours**. L'ordre a été inversé.
 15:57:49   loki             +6 min 39
 16:01:15   alloy            +3 min 26
 16:05:06   grafana          +3 min 51
-16:08:07   grafana-dashboard   ← le SINGULIER, erreur
-16:15:43   grafana-dashbordS   ← corrigé, 7 min 36 perdues
+16:08:07   grafana-dashboard   ← le SINGULIER
+16:15:43   grafana-dashboards  ← corrigé, 7 min 36 perdues
 16:24:19   orders-api       +8 min 36
 ───────────────────────────────────────
            33 min 09 au total
 ```
 
-> **Le critère « moins de 45 minutes » est atteint.** Et il l'est *malgré* 7 min 36
-> perdues sur une faute de frappe — soit **23 % du temps total**. Sans elle, 25 minutes.
->
-> Ce chrono ne compte pas la remise en route du cluster (Default Switch), qui a
-> précédé. C'est normal : ce n'est pas ce que l'exercice mesure.
+> Objectif atteint, **malgré** 7 min 36 perdues sur une faute de frappe — 23 % du
+> temps. Sans elle : 25 minutes. Le chrono exclut la remise en route du cluster,
+> qui a précédé : ce n'est pas ce que l'exercice mesure.
 
 ### 🔴 Les erreurs du passage 2
 
-**1. `grafana-dashboard` au lieu de `grafana-dashboards`** — 7 min 36 de blocage.
-Kubernetes ne fait aucun rapprochement approximatif : le nom monté doit
-correspondre au caractère près.
+**1. `grafana-dashboard` au lieu de `grafana-dashboards`** — 7 min 36.
+Les Events avaient été lus et la ConfigMap manquante correctement identifiée.
+L'erreur est **une transcription du nom**, pas un défaut de méthode — et c'est
+le plus difficile à repérer, parce que le symptôme reste rigoureusement identique
+avant et après. On croit avoir corrigé, rien ne change, et on cherche ailleurs.
 
-**2. ⚠️ Les Events n'ont TOUJOURS pas été lus.** C'est la même erreur qu'au
-passage 1, et c'est la plus coûteuse. Le `describe` a même été copié en entier —
-mais **en s'arrêtant juste avant la section `Events:`**, qui disait mot pour mot :
-```
-MountVolume.SetUp failed for volume "dashboards" :
-configmap "grafana-dashboards" not found
-```
-> Le haut du `describe` décrit ce que le pod **devrait** être.
-> Le bas dit ce qui **se passe**. C'est le bas qui répond.
+> [!tip] Le réflexe qui l'aurait évité
+> Ne jamais retaper un nom lu dans un message d'erreur : le **copier**.
+> Et vérifier après création plutôt que de supposer :
+> ```powershell
+> kubectl -n observability get configmap
+> ```
+> Le pluriel manquant saute aux yeux dans la liste. Deux secondes.
 
-**3. `sudo systemctl restart containerd` tapé dans PowerShell.** Ces commandes
-s'exécutent **dans la VM**, pas sur Windows — `minikube ssh` d'abord. Révèle un
-modèle mental à corriger : la VM minikube est une machine Linux distincte. Et
-trahit une suggestion appliquée sans vérifier où elle s'exécute.
+**2. `sudo systemctl restart containerd` tapé dans PowerShell.** Ces commandes
+s'exécutent **dans la VM**, pas sur Windows — `minikube ssh` d'abord. La VM
+minikube est une machine Linux distincte, et une suggestion trouvée ailleurs
+doit toujours être située avant d'être appliquée.
 
-**4. `kubectl apply` sans `-f`.** `apply` part toujours d'un fichier, annoncé par
-un flag. Le passage 1 l'avait pourtant fait correctement — vérifiable dans cette
-archive même.
+**3. `kubectl apply` sans `-f`.** `apply` part toujours d'un fichier, annoncé par
+un flag. Le passage 1 l'avait fait correctement — vérifiable dans cette archive.
 
-**5. `--profil` et `--kubernetes-version` sans valeur.** Le flag sans valeur a
+**4. `--profil`, et `--kubernetes-version` sans valeur.** Le flag sans valeur a
 avalé le suivant, d'où l'erreur trompeuse *« Impossible d'analyser la version
 --profil=grafana-lab »*. Trois tentatives pour corriger.
 
@@ -393,25 +402,21 @@ avalé le suivant, d'où l'erreur trompeuse *« Impossible d'analyser la version
 
 - **L'ordre de déploiement est intégré.** Mimir 12 secondes après les namespaces,
   puis chaque composant vérifié avant le suivant. Plus aucune hésitation.
+- **Les Events ont été lus et exploités** — la ConfigMap manquante a été
+  identifiée sans aide.
 - **Une vraie panne d'infra encaissée** : le Default Switch d'Hyper-V régénère son
   sous-réseau NAT au redémarrage de Windows. VM injoignable, cluster à recréer.
-  → documenté dans `docs/07-troubleshooting.md`
-- **Les concepts sont là** : sens des flux, rôle d'Alloy comme unique collecteur,
-  RED comme méthode de sélection et non de mise en page, OTel et le déplacement
-  de pouvoir qu'il opère.
+  → `docs/07-troubleshooting.md`
+- **Les concepts sont là** : sens des flux, Alloy comme unique collecteur, RED
+  comme méthode de sélection et non de mise en page, OTel et son enjeu politique.
 
-### 🎯 L'unique objectif du passage 3
+### 🎯 L'objectif du passage 3
 
-> **Lire les Events AVANT de demander de l'aide.** Une seule règle.
+**Moins de 25 minutes** — atteignable, c'est le chrono actuel sans la faute de frappe.
 
-Deux commandes à mettre en raccourci, pour ne plus jamais scroller :
-```powershell
-kubectl -n <ns> describe pod -l app=<X> | Select-String "Events:" -Context 0,10
-kubectl -n <ns> get events --sort-by=.lastTimestamp | Select-Object -Last 10
-```
-
-Objectif chiffré : **moins de 25 minutes**, et **zéro question posée** avant
-d'avoir lu les Events.
+Et la seule case qui reste : **commenter à voix haute pendant le déploiement,
+sans notes, en s'enregistrant**. C'est le vrai test avant un entretien : savoir
+faire est une chose, savoir raconter pendant qu'on fait en est une autre.
 
 ---
 
@@ -422,5 +427,5 @@ d'avoir lu les Events.
 | Date | |
 | Durée | *cible : < 25 min* |
 | Note | |
-| Events lus avant de demander de l'aide ? | |
+| Commenté à voix haute, enregistré ? | |
 | Mes 3 erreurs | |
